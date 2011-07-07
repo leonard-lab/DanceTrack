@@ -11,5 +11,5 @@ HUNG_SRCS="$MT_SRC_DIR/MT_Tracking/3rdparty/libhungarian-0.3/hungarian.c $MT_SRC
 gcc -c $HUNG_SRCS -I $MT_INC_DIR
 ar rs libHungarian.a hungarian.o makeprob.o
 
-g++ testDSGYBlobber.cpp ../src/DSGYBlobber.cpp $OTHERSRCS $CV_FLAGS -I $MT_INC_DIR -I ../src $CV_LIBS libHungarian.a -o testDSGYBlobber
-g++ testDSGYBlobberWHist.cpp ../src/DSGYBlobber.cpp $OTHERSRCS $CV_FLAGS -I $MT_INC_DIR -I ../src $CV_LIBS libHungarian.a -o testDSGYBlobberWHist
+#g++ testDSGYBlobber.cpp ../src/DSGYBlobber.cpp $OTHERSRCS $CV_FLAGS -I $MT_INC_DIR -I ../src $CV_LIBS libHungarian.a -o testDSGYBlobber
+g++ testDSGYBlobberWHist.cpp BiCC.cpp ../src/DSGYBlobber.cpp $OTHERSRCS $CV_FLAGS -I $MT_INC_DIR -I ../src $CV_LIBS libHungarian.a -o testDSGYBlobberWHist
