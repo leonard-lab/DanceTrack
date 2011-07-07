@@ -105,11 +105,19 @@ std::vector<GYBlob> DSGYBlobber::findBlobs(IplImage* thresh_image, int num_to_fi
     {
         for(unsigned int i = 0; i < m_CurrentBlobs.size(); i++)
         {
-            TEST_OUT("\t%d:  (x,y) = (%f, %f), orientation = %f\n",
+            TEST_OUT("\t%d:  (x,y) = (%f, %f), orientation = %f,\n"
+                     "\t\t axes = %f, %f\n"
+                     "\t\t moments = %f, %f, %f\n",
                      i,
                      m_CurrentBlobs[i].m_dXCentre,
                      m_CurrentBlobs[i].m_dYCentre,
-                     m_CurrentBlobs[i].m_dOrientation);
+                     m_CurrentBlobs[i].m_dOrientation,
+                     m_CurrentBlobs[i].m_dMinorAxis,
+                     m_CurrentBlobs[i].m_dMajorAxis,
+                     m_CurrentBlobs[i].m_dXXMoment,
+                     m_CurrentBlobs[i].m_dXYMoment,
+                     m_CurrentBlobs[i].m_dYYMoment
+                );
         }
     }
     TEST_OUT(" -> Done\n");
@@ -384,11 +392,15 @@ void DSGYBlobber::doSegmentation(int num_to_find)
         m_CurrentBlobs[currentblob].m_dArea = ExtractedBlobs[k]->GetArea();
         m_CurrentBlobs[currentblob].m_dXCentre = ExtractedBlobs[k]->GetXCentre();
         m_CurrentBlobs[currentblob].m_dYCentre = ExtractedBlobs[k]->GetYCentre();
+        m_CurrentBlobs[currentblob].m_dXXMoment = ExtractedBlobs[k]->GetXXMoment();
+        m_CurrentBlobs[currentblob].m_dXYMoment = ExtractedBlobs[k]->GetXYMoment();
+        m_CurrentBlobs[currentblob].m_dYYMoment = ExtractedBlobs[k]->GetYYMoment();            
 
         // Calculating ellipse (semi) major and minor axes from the moments
         XXMoment = ExtractedBlobs[k]->GetXXMoment();
         YYMoment = ExtractedBlobs[k]->GetYYMoment();
         XYMoment = ExtractedBlobs[k]->GetXYMoment();
+
         Delta = sqrt(4*pow(XYMoment, 2) + pow(XXMoment - YYMoment, 2));
         A = pow(16*pow(M_PI, 2)*(XXMoment*YYMoment - pow(XYMoment, 2)), 0.25);
 
@@ -397,8 +409,11 @@ void DSGYBlobber::doSegmentation(int num_to_find)
             A = 1;
         }
 
-        m_CurrentBlobs[currentblob].m_dMajorAxis = sqrt((2*(XXMoment + YYMoment + Delta))/A);
-        m_CurrentBlobs[currentblob].m_dMinorAxis = sqrt((2*(XXMoment + YYMoment - Delta))/A);
+        double M, m;
+        M = sqrt((2*(XXMoment + YYMoment + Delta))/A);
+        m = sqrt((2*(XXMoment + YYMoment - Delta))/A);        
+        m_CurrentBlobs[currentblob].m_dMajorAxis = M;
+        m_CurrentBlobs[currentblob].m_dMinorAxis = m;
 
         // Calculating the orientation angle from the moments. Note that after this
         // calculation, theta will be between -90 and 90
