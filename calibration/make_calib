@@ -1,0 +1,3 @@
+MT_INC_DIR=../../MADTraC/build/include
+MT_LIB_DIR=../../MADTraC/build/lib
+g++ OpenCVCalib.cpp `pkg-config opencv --cflags` -I$MT_INC_DIR $MT_LIB_DIR/libMT_Tracking.a $MT_LIB_DIR/libMT_Core.a `pkg-config opencv --libs` -o OpenCVCalib 
