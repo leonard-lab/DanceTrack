@@ -206,7 +206,8 @@ void DSGYBlobber::doSegmentation(int num_to_find)
     if(!m_bHasHistory)
     {
         TEST_OUT("\tInitializing with uniform blobs\n");
-        m_Gaussians = MixGaussians(num_to_find, m_RawBlobData[0]->GetBoundingBox());
+        //m_Gaussians = MixGaussians(num_to_find, m_SearchArea);
+        m_Gaussians.CoverBox(num_to_find, m_SearchArea);
     }
     else
     {
