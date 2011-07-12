@@ -4,11 +4,28 @@
 #include "MT_Core.h"
 #include "MT_Tracking.h"
 
+#include "../test/DSGYA_Segmenter.h"
+
 const double DEFAULT_SIGMA_POSITION = 4.0; /* pixels */
 const double DEFAULT_SIGMA_HEADING = 0.26; /* rad ~= 15 deg */
 const double DEFAULT_SIGMA_SPEED = 1.0; /* pixels/frame */
 const double DEFAULT_SIGMA_POSITION_MEAS = 1.0; /* pixels */
 const double DEFAULT_SIGMA_HEADING_MEAS = 0.087; /* rad ~= 5 deg */
+
+class DanceTracker;
+
+class Dance_Segmenter : public DSGYA_Segmenter
+{
+public:
+    Dance_Segmenter(DanceTracker* tracker)
+        : m_pTracker(tracker), DSGYA_Segmenter() {};
+    ~Dance_Segmenter(){};
+
+    void usePrevious(DSGYA_Blob* obj, unsigned int i);
+    
+private:
+    DanceTracker* m_pTracker;
+};
 
 typedef std::vector<double> t_p_history;
 
@@ -33,10 +50,14 @@ private:
 	unsigned int m_iSThresh_High;
     unsigned int m_iVThresh_Low;	
 	unsigned int m_iVThresh_High;
+
+    unsigned int m_iBGThresh;
     
     unsigned int m_iBlobValThresh;
 	unsigned int m_iBlobAreaThreshLow;
 	unsigned int m_iBlobAreaThreshHigh;
+
+    double m_dOverlapFactor;
 
     /* only used to add to XDF */
     int m_iStartFrame;
@@ -73,6 +94,8 @@ private:
     int m_iFrameCounter;
     int m_iNObj;
 
+    std::vector<DSGYA_Blob> m_vBlobs;
+
     std::vector<double> m_vdBlobs_X;
     std::vector<double> m_vdBlobs_Y; 
     std::vector<double> m_vdBlobs_Area; 
@@ -81,10 +104,12 @@ private:
     std::vector<double> m_vdBlobs_MinorAxis;
     std::vector<double> m_vdBlobs_Speed;
 
+    std::vector<bool> m_vbNoMeasurement;
+
     std::vector<double> m_vdTracked_X;
     std::vector<double> m_vdTracked_Y;
-    std::vector<double> m_vdTracked_Heading;
-    std::vector<double> m_vdTracked_Speed;
+    std::vector<double> m_vdTracked_Vx;
+    std::vector<double> m_vdTracked_Vy;
 
     std::vector<t_p_history> m_vdHistories_X;
     std::vector<t_p_history> m_vdHistories_Y;
@@ -125,6 +150,10 @@ public:
 
     void doGLDrawing(int flags);
 
+    void notifyNoMeasurement(unsigned int i)
+    {
+        m_vbNoMeasurement[i] = true;
+    }
     
 
 };

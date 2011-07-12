@@ -12,29 +12,31 @@ I = zeros(h, w);
 
 thresh = 1;
 
-% X = [200 200 50];
-% Y = [100 100 135];
-% A = 0.5*[100 100 20];
-% B = 0.5*[20 20 100];
-% PHI = [60 0 45]*pi/180;
+X = [200 200 50];
+Y = [100 100 135];
+A = 0.5*[100 100 100];
+B = 0.5*[90 90 10];
+PHI = [0 45 0]*pi/180;
 
-n = 4;
-b = 20;
-a = 50;
-b = 20; 
-X = b + (w - 2*b)*rand(1, n);
-Y = b + (h - 2*b)*rand(1, n);
-amin = 5;  amax = 10;
-bmin = 20;  bmax = 40;
-A = amin + (amax-amin)*rand(1,n);
-B = bmin + (bmax-bmin)*rand(1,n);
-PHI = 2*pi*randn(1, n);
+% n = 4;
+% b = 20;
+% a = 50;
+% b = 20; 
+% X = b + (w - 2*b)*rand(1, n);
+% Y = b + (h - 2*b)*rand(1, n);
+% amin = 5;  amax = 10;
+% bmin = 20;  bmax = 40;
+% A = amin + (amax-amin)*rand(1,n);
+% B = bmin + (bmax-bmin)*rand(1,n);
+% PHI = 2*pi*randn(1, n);
 
 num_ell = length(X);
 Sinv = cell(num_ell, 1);
+Ss = cell(num_ell, 1);
 R = cell(num_ell, 1);
 M = cell(num_ell, 1);
 D = [];
+P = [];
 
 for ix = 1 : num_ell,
     sa2 = (A(ix))^2;
@@ -45,6 +47,7 @@ for ix = 1 : num_ell,
     t = (sa2-sb2)*cp*sp;
         
     S = [sa2*cp*cp+sb2*sp*sp t; t sb2*cp*cp+sa2*sp*sp];
+    Ss{ix} = S;
     Sinv{ix} = inv(S);
     R{ix} = [X(ix); Y(ix)];
     xm = X(ix) + sqrt(PRIOR_NOISE)*randn(1);
@@ -54,6 +57,7 @@ for ix = 1 : num_ell,
     yym = S(2,2) + PRIOR_NOISE*randn(1);
     
     SS =[xxm xym; xym yym];
+    P = [P; S(1,2)/S(1,1)/S(2,2)];
     [v,d] = eig(SS);
     
     minor = sqrt(d(1,1));
@@ -71,7 +75,8 @@ for x = 1 : w,
     for y = 1 : h,
         for ix = 1 : num_ell;
             dr = [R{ix}(1) - x; R{ix}(2) - y];
-            p = (dr'*Sinv{ix}*dr);
+            %p = exp(-(0.5)*(dr'*Sinv{ix}*dr))/2/pi/sqrt(det(Ss{ix}));
+            p = dr'*Sinv{ix}*dr;
             if p < thresh,
                 I(y,x) = 1;
             end
@@ -87,6 +92,8 @@ end
 
 imagesc(I)
 colormap gray
+
+pause
 
 if WRITE_IMAGE,
     save('test_initials.dat', 'D', '-ASCII');

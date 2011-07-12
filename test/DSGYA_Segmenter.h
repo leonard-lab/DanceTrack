@@ -4,6 +4,7 @@
 #include <vector>
 
 #include "MT/MT_Tracking/trackers/YA/YABlobber.h"
+#include "MT/MT_Tracking/trackers/GY/GYBlobs.h"
 
 class DSGYA_Blob
 {
@@ -18,6 +19,8 @@ public:
                double M,
                double a,
                double o);
+    DSGYA_Blob(const YABlob& in_blob);
+    DSGYA_Blob(const GYBlob& in_blob);
 
     double m_dXCenter;
     double m_dYCenter;
@@ -28,6 +31,7 @@ public:
     double m_dMajorAxis;
     double m_dArea;
     double m_dOrientation;
+    double m_dRhoContrib;
 };
 
 class DSGYA_Segmenter
@@ -45,11 +49,14 @@ public:
     unsigned int m_iMinBlobPerimeter;
     unsigned int m_iMaxBlobArea;
     unsigned int m_iMaxBlobPerimeter;
+    double m_dOverlapFactor;
 
     void setDebugFile(FILE* file);
 protected:
-    virtual bool areAdjacent(const DSGYA_Blob& obj, const YABlob& blob);
-    virtual void usePrevious(DSGYA_Blob* obj);
+    virtual bool areAdjacent(DSGYA_Blob* obj, const YABlob& blob);
+    virtual bool areOverlapping(DSGYA_Blob* obj, const YABlob& blob);
+    virtual void usePrevious(DSGYA_Blob* obj, unsigned int i);
+    virtual std::vector<YABlob> filterFirstBlobs(const std::vector<YABlob>& in_blobs);
     
 private:
     unsigned int m_iFrameWidth;

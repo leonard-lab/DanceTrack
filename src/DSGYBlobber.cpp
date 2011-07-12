@@ -88,7 +88,9 @@ void DSGYBlobber::setInitials(std::vector<double> x_c,
 
 
 
-std::vector<GYBlob> DSGYBlobber::findBlobs(IplImage* thresh_image, int num_to_find)
+std::vector<GYBlob> DSGYBlobber::findBlobs(IplImage* thresh_image,
+                                           int num_to_find,
+                                           int max_iters)
 {
     TEST_OUT("============= DSGYBlobber::findBlobs: =============\n");
     TEST_OUT("\tImage:  (%d x %d x %d)",
@@ -98,7 +100,7 @@ std::vector<GYBlob> DSGYBlobber::findBlobs(IplImage* thresh_image, int num_to_fi
     TEST_OUT(", %d blobs expected\n", num_to_find);        
     
     doBlobFinding(thresh_image);
-    doSegmentation(num_to_find);
+    doSegmentation(num_to_find, max_iters);
 
     TEST_OUT("Found %d blobs:\n", (int) m_CurrentBlobs.size());
     if(m_pTestFile)
@@ -187,7 +189,7 @@ void DSGYBlobber::doBlobFinding(IplImage* thresh_frame)
    to a single blob, the parameters are directly measured. For each raw blob that corresponds to
    multiple blobs, an expectation maximisation algorithm is run to fit multiple ellipses to the pixel
    data. Then the individual blobs are extracted and their properties measured. */
-void DSGYBlobber::doSegmentation(int num_to_find)
+void DSGYBlobber::doSegmentation(int num_to_find, int max_iters)
 {
     TEST_OUT("EMMG\n");
     
@@ -341,10 +343,12 @@ void DSGYBlobber::doSegmentation(int num_to_find)
 
     // Run the expectation maximisation algorithm
     TEST_OUT("\tRunning EMMG algorithm\n");
+    /*m_Gaussians.m_dMaxEccentricity = 1.1;*/
+    /*m_Gaussians.m_dMaxDistance = 10.0;*/
+    /*m_Gaussians.m_dMaxSizePercentChange = 10.0;*/
     m_Gaussians.EMMG(m_RawBlobData[0],
                      PixelAllocation,
-                     0 /* was: m_iFrame_counter
-                        * doesn't appear to be used by EMMG */);
+                     max_iters);
 
    //////////////////////////////////////////////////////////////////////
 
@@ -390,12 +394,12 @@ void DSGYBlobber::doSegmentation(int num_to_find)
     // Loop through the new blobs and extract their parameters
     for (k = 0 ; k < numinrawblob ; k++)
     {
-        m_CurrentBlobs[currentblob].m_dArea = ExtractedBlobs[k]->GetArea();
-        m_CurrentBlobs[currentblob].m_dXCentre = ExtractedBlobs[k]->GetXCentre();
-        m_CurrentBlobs[currentblob].m_dYCentre = ExtractedBlobs[k]->GetYCentre();
-        m_CurrentBlobs[currentblob].m_dXXMoment = ExtractedBlobs[k]->GetXXMoment();
-        m_CurrentBlobs[currentblob].m_dXYMoment = ExtractedBlobs[k]->GetXYMoment();
-        m_CurrentBlobs[currentblob].m_dYYMoment = ExtractedBlobs[k]->GetYYMoment();            
+        m_CurrentBlobs[k].m_dArea = ExtractedBlobs[k]->GetArea();
+        m_CurrentBlobs[k].m_dXCentre = ExtractedBlobs[k]->GetXCentre();
+        m_CurrentBlobs[k].m_dYCentre = ExtractedBlobs[k]->GetYCentre();
+        m_CurrentBlobs[k].m_dXXMoment = ExtractedBlobs[k]->GetXXMoment();
+        m_CurrentBlobs[k].m_dXYMoment = ExtractedBlobs[k]->GetXYMoment();
+        m_CurrentBlobs[k].m_dYYMoment = ExtractedBlobs[k]->GetYYMoment();            
 
         // Calculating ellipse (semi) major and minor axes from the moments
         XXMoment = ExtractedBlobs[k]->GetXXMoment();
@@ -413,8 +417,8 @@ void DSGYBlobber::doSegmentation(int num_to_find)
         double M, m;
         M = sqrt((2*(XXMoment + YYMoment + Delta))/A);
         m = sqrt((2*(XXMoment + YYMoment - Delta))/A);        
-        m_CurrentBlobs[currentblob].m_dMajorAxis = M;
-        m_CurrentBlobs[currentblob].m_dMinorAxis = m;
+        m_CurrentBlobs[k].m_dMajorAxis = M;
+        m_CurrentBlobs[k].m_dMinorAxis = m;
 
         // Calculating the orientation angle from the moments. Note that after this
         // calculation, theta will be between -90 and 90
@@ -431,7 +435,7 @@ void DSGYBlobber::doSegmentation(int num_to_find)
             headfraction = 0.0;
             for (j = 0; j < (int) PixelList.size() ; j++)
             {
-                if (PixelList[j].x > m_CurrentBlobs[currentblob].m_dXCentre)
+                if (PixelList[j].x > m_CurrentBlobs[k].m_dXCentre)
                 {
                     headfraction += 1.0;
                 }
@@ -447,7 +451,7 @@ void DSGYBlobber::doSegmentation(int num_to_find)
             {
                 for (j = 0 ; j < (int) PixelList.size() ; j++)
                 {
-                    if (PixelList[j].y > (slope*(PixelList[j].x - m_CurrentBlobs[currentblob].m_dXCentre) + m_CurrentBlobs[currentblob].m_dYCentre))
+                    if (PixelList[j].y > (slope*(PixelList[j].x - m_CurrentBlobs[k].m_dXCentre) + m_CurrentBlobs[k].m_dYCentre))
                     {
                         headfraction += 1.0;
                     }
@@ -458,7 +462,7 @@ void DSGYBlobber::doSegmentation(int num_to_find)
             {
                 for (j = 0 ; j < (int) PixelList.size() ; j++)
                 {
-                    if (PixelList[j].y < (slope*(PixelList[j].x - m_CurrentBlobs[currentblob].m_dXCentre) + m_CurrentBlobs[currentblob].m_dYCentre))
+                    if (PixelList[j].y < (slope*(PixelList[j].x - m_CurrentBlobs[k].m_dXCentre) + m_CurrentBlobs[k].m_dYCentre))
                     {
                         headfraction += 1.0;
                     }
@@ -480,7 +484,7 @@ void DSGYBlobber::doSegmentation(int num_to_find)
         }
         // Now we have theta between -180 and 180
 
-        m_CurrentBlobs[currentblob].m_dOrientation = -theta;
+        m_CurrentBlobs[k].m_dOrientation = -theta;
 
         currentblob++;
     }           // end for (k = 0 ; k < numinrawblob ; k++)

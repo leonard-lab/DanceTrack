@@ -47,6 +47,11 @@ void DanceTrackerFrame::initUserData()
                               wxT("Note"),
                               wxT("Note for data file."),
                               wxCMD_LINE_VAL_STRING);
+
+    m_sBackgroundDirectory = wxT("/Users/dan/src/dancetrack/stills");
+    m_sBackgroundPath = m_sBackgroundDirectory + wxT("/DanceBackground.bmp");
+    m_sROIDirectory = wxT("/Users/dan/src/dancetrack/stills");
+    m_sROIPath = m_sBackgroundDirectory + wxT("/DanceMask.bmp");
                               
 
 }

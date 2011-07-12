@@ -1,7 +1,9 @@
 #include "DanceTracker.h"
 
+#include <fstream>
+
 /* default parameter values */
-const unsigned int DEFAULT_BG_THRESH = 60;
+const unsigned int DEFAULT_BG_THRESH = 200;
 const double DEFAULT_MIN_BLOB_PERIMETER = 10;   
 const double DEFAULT_MIN_BLOB_AREA = 10;        
 const double DEFAULT_MAX_BLOB_PERIMETER = 1000; 
@@ -18,28 +20,17 @@ const unsigned int DEFAULT_VTHRESH_HIGH = 255;
 /* default color to draw blobs */
 const MT_Color DEFAULT_BLOB_COLOR = MT_Red;
 
-/* number of past positions to use when estimating orientation */
-const unsigned int N_hist = 5;
+void Dance_Segmenter::usePrevious(DSGYA_Blob* obj, unsigned int i)
+{
+    DSGYA_Segmenter::usePrevious(obj, i);
+    m_pTracker->notifyNoMeasurement(i);
+}
 
-/* This is the state mapping used by the Unscented Kalman Filter
- * (UKF).  I.e.
- * x(t+1) = f(x(t), u(t) (control input), v(t) (process noise)
- *
- * This particular function is based on a model where heading and
- * speed remain constant unless they are changed by "random" noise.
- * In reality the fish are speeding up, slowing down, and turning as a
- * result of behavioral decisions, but without knowing what those
- * decisions were, the best we can do is model it as noise and guess
- * at the standard deviations.  In this model we don't use u_k, which
- * is fine in terms of the UKF.
- *
- * The k subscript is for time - e.g. x_k = x(kT) where T is the
- * sampling time
- */
-static void fish_dynamics(const CvMat* x_k,
-                          const CvMat* u_k,
-                          const CvMat* v_k,
-                          CvMat* x_kplus1)
+
+static void dance_dynamics(const CvMat* x_k,
+                           const CvMat* u_k,
+                           const CvMat* v_k,
+                           CvMat* x_kplus1)
 {
     /* Assuming that the time-step is one frame rather than e.g.
      * 33 msec - I take the actual time step into account in
@@ -51,18 +42,18 @@ static void fish_dynamics(const CvMat* x_k,
      * Note that x_k is a 4x1 matrix here */
     double x = cvGetReal2D(x_k, 0, 0);
     double y = cvGetReal2D(x_k, 1, 0);
-    double hdg = cvGetReal2D(x_k, 2, 0); /* heading [rad] */
-    double spd = cvGetReal2D(x_k, 3, 0); /* speed */
+    double vx = cvGetReal2D(x_k, 2, 0); /* heading [rad] */
+    double vy = cvGetReal2D(x_k, 3, 0); /* speed */
 
     /* position(t + 1) = position(t) + dT*velocity */
-    x += dT*spd*cos(hdg);
-    y += dT*spd*sin(hdg);
+    x += dT*vx;
+    y += dT*vy;
 
     /* works just like cvGetReal2D */
     cvSetReal2D(x_kplus1, 0, 0, x);
     cvSetReal2D(x_kplus1, 1, 0, y);
-    cvSetReal2D(x_kplus1, 2, 0, hdg);
-    cvSetReal2D(x_kplus1, 3, 0, fabs(spd));
+    cvSetReal2D(x_kplus1, 2, 0, vx);
+    cvSetReal2D(x_kplus1, 3, 0, vy);
 
     /* this allows v_k to be a NULL pointer, in which case
      * this step is skipped */
@@ -74,18 +65,12 @@ static void fish_dynamics(const CvMat* x_k,
     
 }
 
-/* This is the measurement mapping used by the UKF, i.e.
- * z(t) = h(x(t), n(t))
- *
- * In this case, z is a vector with (x,y) position and heading and
- * noise is additive. */
-static void fish_measurement(const CvMat* x_k,
-                             const CvMat* n_k,
-                             CvMat* z_k)
+static void dance_measurement(const CvMat* x_k,
+                              const CvMat* n_k,
+                              CvMat* z_k)
 {
     cvSetReal2D(z_k, 0, 0, cvGetReal2D(x_k, 0, 0));
     cvSetReal2D(z_k, 1, 0, cvGetReal2D(x_k, 1, 0));
-    cvSetReal2D(z_k, 2, 0, cvGetReal2D(x_k, 2, 0));
 
     /* as above, skip this step when n_k is null */
     if(n_k)
@@ -94,31 +79,19 @@ static void fish_measurement(const CvMat* x_k,
     }
 }
 
-/* Using this function below to constrain the state estimate.  The
- * constraint is applied after the UKF correction step.
- *
- * Constraints applied:
- *   0 <= x <= frame (image) width
- *   0 <= y <= frame height
- *   0 <= speed <= 100 (px/frame)
- *   If x, y, heading, or speed are NaN, then
- *      a) if the corresponding estimate is valid, that number is used
- *      b) if the estimate is also NaN, x, y, and heading are set to
- *          0, speed is set to 0.1 
- */
 static void constrain_state(CvMat* x_k,
                             CvMat* X_p,
                             IplImage* frame)
 {
     double x = cvGetReal2D(x_k, 0, 0);
     double y = cvGetReal2D(x_k, 1, 0);
-    double hdg = cvGetReal2D(x_k, 2, 0);
-    double spd = cvGetReal2D(x_k, 3, 0);
+    double vx = cvGetReal2D(x_k, 2, 0);
+    double vy = cvGetReal2D(x_k, 3, 0);
 
     double x_p = cvGetReal2D(X_p, 0, 0);
     double y_p = cvGetReal2D(X_p, 1, 0);
-    double hdg_p = cvGetReal2D(X_p, 2, 0);
-    double spd_p = cvGetReal2D(X_p, 3, 0);
+    double vx_p = cvGetReal2D(X_p, 2, 0);
+    double vy_p = cvGetReal2D(X_p, 3, 0);
 
     /* MT_CLAMP(x, a, b) =
      *    x, if a <= x <= b,
@@ -127,7 +100,8 @@ static void constrain_state(CvMat* x_k,
      */
     x = MT_CLAMP(x, 0, frame->width);
     y = MT_CLAMP(y, 0, frame->height);
-    spd = MT_CLAMP(spd, 0, 100);
+    vx = MT_CLAMP(vx, -10, 10);
+    vy = MT_CLAMP(vy, -10, 10);    
 
     /* MT_isnan(x) returns true if x is NaN */
     if(MT_isnan(x))
@@ -152,66 +126,35 @@ static void constrain_state(CvMat* x_k,
             y = 0;
         }
     }
-    if(MT_isnan(hdg))
+    if(MT_isnan(vx))
     {
-        if(!MT_isnan(hdg_p))
+        if(!MT_isnan(vx_p))
         {
-            hdg = hdg_p;
+            vx = vx_p;
         }
         else
         {
-            hdg = 0;
+            vx = 0.1;
         }
     }
-    if(MT_isnan(spd))
+    if(MT_isnan(vy))
     {
-        if(!MT_isnan(spd_p))
+        if(!MT_isnan(vy_p))
         {
-            spd = spd_p;
+            vy = vy_p;
         }
         else
         {
-            spd = 0.1;            
+            vy = 0.1;            
         }
     }
     
     cvSetReal2D(x_k, 0, 0, x);
     cvSetReal2D(x_k, 1, 0, y);
-    cvSetReal2D(x_k, 2, 0, hdg);
-    cvSetReal2D(x_k, 3, 0, fabs(spd));
+    cvSetReal2D(x_k, 2, 0, vx);
+    cvSetReal2D(x_k, 3, 0, vy);
 }
 
-/* helper function.  Basic FIFO buffer with N_hist entries
- *
- * Given new values for x and y, do
- * if size of X < N_hist,
- *    X = [existing values.... x]
- * else (have N_hist values)
- *    drop the first value, shift all of the other values forward
- *     (i.e. X[k] = X[k+1]), and set the last value to x
- *
- * The same is done for Y. */
-void rollHistories(std::vector<double>* X,
-                   std::vector<double>* Y,
-                   double x,
-                   double y)
-{
-    if(X->size() < N_hist)
-    {
-        X->push_back(x);
-        Y->push_back(y);
-    }
-    else
-    {
-        for(unsigned int i = 0; i < X->size()-1; i++)
-        {
-            X->at(i) = X->at(i+1);
-            Y->at(i) = Y->at(i+1);
-        }
-        X->at(X->size()-1) = x;
-        Y->at(Y->size()-1) = y;
-    }
-}
 
 /* helper function.  Returns false if any element of M is either NaN
  * or larger in magnitude than max_val */
@@ -245,6 +188,7 @@ DanceTracker::DanceTracker(IplImage* ProtoFrame, unsigned int n_obj)
       m_iBlobValThresh(DEFAULT_BG_THRESH),
 	  m_iBlobAreaThreshLow(DEFAULT_MIN_BLOB_AREA),
 	  m_iBlobAreaThreshHigh(DEFAULT_MAX_BLOB_AREA),
+      m_dOverlapFactor(1.0),
 	  m_iSearchAreaPadding(DEFAULT_SEARCH_AREA_PADDING),      
       m_iStartFrame(-1),
       m_iStopFrame(-1),
@@ -331,6 +275,7 @@ void DanceTracker::doInit(IplImage* ProtoFrame)
     m_iSThresh_High = DEFAULT_STHRESH_HIGH;
     m_iVThresh_Low = DEFAULT_VTHRESH_LOW;
     m_iVThresh_High = DEFAULT_VTHRESH_HIGH;
+    m_iBGThresh = DEFAULT_BG_THRESH;
 
     /* resize all of our vectors. note that the std::vector object
        deallocates memory on its own, so we won't have to do that later */
@@ -344,8 +289,9 @@ void DanceTracker::doInit(IplImage* ProtoFrame)
     m_viMatchAssignments.resize(m_iNObj);
     m_vdTracked_X.resize(m_iNObj);
     m_vdTracked_Y.resize(m_iNObj);
-    m_vdTracked_Heading.resize(m_iNObj);
-    m_vdTracked_Speed.resize(m_iNObj);
+    m_vdTracked_Vx.resize(m_iNObj);
+    m_vdTracked_Vy.resize(m_iNObj);
+    m_vbNoMeasurement.resize(m_iNObj, false);
 
     m_vdHistories_X.resize(m_iNObj);
     m_vdHistories_Y.resize(m_iNObj);
@@ -366,7 +312,9 @@ void DanceTracker::doInit(IplImage* ProtoFrame)
     m_pTrackerFrameGroup->pushFrame(&m_pHSVFrame,    "HSV Frame");
     m_pTrackerFrameGroup->pushFrame(&m_pHFrame,    "H Frame");
     m_pTrackerFrameGroup->pushFrame(&m_pSFrame,    "S Frame");
-    m_pTrackerFrameGroup->pushFrame(&m_pVFrame,    "V Frame");        
+    m_pTrackerFrameGroup->pushFrame(&m_pVFrame,    "V Frame");
+    m_pTrackerFrameGroup->pushFrame(&m_pTempFrame1, "HSV Thresh");
+    m_pTrackerFrameGroup->pushFrame(&m_pTempFrame2, "BG Thresh");    
     m_pTrackerFrameGroup->pushFrame(&m_pThreshFrame,    "Threshold Frame");
 
 
@@ -392,6 +340,8 @@ void DanceTracker::doInit(IplImage* ProtoFrame)
 	dg_blob->AddUInt("S max", &m_iSThresh_High);
 	dg_blob->AddUInt("V min", &m_iVThresh_Low);
 	dg_blob->AddUInt("V max", &m_iVThresh_High);
+
+    dg_blob->AddUInt("BG Thresh", &m_iBGThresh);
     
     dg_blob->AddUInt("Min Blob Area",
                     &m_iBlobAreaThreshLow,
@@ -401,6 +351,12 @@ void DanceTracker::doInit(IplImage* ProtoFrame)
                     &m_iBlobAreaThreshHigh,
                     MT_DATA_READWRITE,
                     0);
+
+    dg_blob->AddDouble("Overlap Factor",
+                       &m_dOverlapFactor,
+                       MT_DATA_READWRITE,
+                       0.1);
+    
 	dg_blob->AddUInt("Search Area Padding",
 		             &m_iSearchAreaPadding,
 					 MT_DATA_READWRITE,
@@ -409,20 +365,12 @@ void DanceTracker::doInit(IplImage* ProtoFrame)
                        &m_dSigmaPosition,
                        MT_DATA_READWRITE,
                        0);
-    dg_blob->AddDouble("Heading Disturbance Sigma",
-                       &m_dSigmaHeading,
-                       MT_DATA_READWRITE,
-                       0);
     dg_blob->AddDouble("Speed Disturbance Sigma",
                        &m_dSigmaSpeed,
                        MT_DATA_READWRITE,
                        0);
     dg_blob->AddDouble("Position Measurement Sigma",
                        &m_dSigmaPositionMeas,
-                       MT_DATA_READWRITE,
-                       0);
-    dg_blob->AddDouble("Heading Measurement Sigma",
-                       &m_dSigmaHeadingMeas,
                        MT_DATA_READWRITE,
                        0);
 
@@ -439,8 +387,8 @@ void DanceTracker::doInit(IplImage* ProtoFrame)
     MT_DataReport* dr_tracked = new MT_DataReport("Tracked data");
     dr_tracked->AddDouble("X", &m_vdTracked_X);
     dr_tracked->AddDouble("Y", &m_vdTracked_Y);
-    dr_tracked->AddDouble("Hdg", &m_vdTracked_Heading);
-    dr_tracked->AddDouble("Spd", &m_vdTracked_Speed);
+    dr_tracked->AddDouble("Vx", &m_vdTracked_Vx);
+    dr_tracked->AddDouble("Vy", &m_vdTracked_Vy);
     m_vDataReports.resize(0);
     m_vDataReports.push_back(dr_tracked);
 
@@ -462,19 +410,21 @@ void DanceTracker::createFrames()
     m_HungarianMatcher.doInit(m_iNObj);
 
     /* Initialize some of the matrices used for tracking */
-    m_pQ = cvCreateMat(4, 4, CV_64FC1);
-    m_pR = cvCreateMat(3, 3, CV_64FC1);
+    unsigned int nstate = 4;
+    unsigned int nmeas = 2;
+    m_pQ = cvCreateMat(nstate, nstate, CV_64FC1);
+    m_pR = cvCreateMat(nmeas, nmeas, CV_64FC1);
     cvSetIdentity(m_pQ);
     cvSetIdentity(m_pR);
-    m_px0 = cvCreateMat(4, 1, CV_64FC1);
-    m_pz = cvCreateMat(3, 1, CV_64FC1);
+    m_px0 = cvCreateMat(nstate, 1, CV_64FC1);
+    m_pz = cvCreateMat(nmeas, 1, CV_64FC1);
 
     /* Create the UKF objects */
     m_vpUKF.resize(m_iNObj);
     for(unsigned int i = 0; i < m_iNObj; i++)
     {
-        m_vpUKF[i] = MT_UKFInit(4, 3, 0.1); /* 4 states, 3
-                                        * measurements, 0.1 is a parameter */
+        m_vpUKF[i] = MT_UKFInit(nstate, nmeas, 0.1); /* 0.1 is a
+                                                        paramater */
     }
     
     if(m_pHSVFrame)
@@ -559,8 +509,8 @@ void DanceTracker::writeData()
 
     m_XDF.writeData("Tracked X"        , m_vdTracked_X); 
     m_XDF.writeData("Tracked Y"        , m_vdTracked_Y); 
-    m_XDF.writeData("Tracked Heading"  , m_vdTracked_Heading); 
-    m_XDF.writeData("Tracked Speed"    , m_vdTracked_Speed); 
+    m_XDF.writeData("Tracked Heading"  , m_vdTracked_Vx); 
+    m_XDF.writeData("Tracked Speed"    , m_vdTracked_Vy); 
 }
 
 void DanceTracker::HSVSplit(IplImage* frame)
@@ -595,10 +545,8 @@ void DanceTracker::doTracking(IplImage* frame)
        objects I'm not sure how else to do it. */ 
     if(
         m_dSigmaPosition != m_dPrevSigmaPosition ||
-        m_dSigmaHeading != m_dPrevSigmaHeading ||
         m_dSigmaSpeed != m_dPrevSigmaSpeed ||
-        m_dSigmaPositionMeas != m_dPrevSigmaPositionMeas ||
-        m_dSigmaHeadingMeas != m_dPrevSigmaHeadingMeas
+        m_dSigmaPositionMeas != m_dPrevSigmaPositionMeas
         )
     {
         /* these are the diagonal entries of the "Q" matrix, which
@@ -606,14 +554,13 @@ void DanceTracker::doTracking(IplImage* frame)
            modeled here as being independent and uncorrellated. */
         cvSetReal2D(m_pQ, 0, 0, m_dSigmaPosition*m_dSigmaPosition);
         cvSetReal2D(m_pQ, 1, 1, m_dSigmaPosition*m_dSigmaPosition);
-        cvSetReal2D(m_pQ, 2, 2, m_dSigmaHeading*m_dSigmaHeading);
+        cvSetReal2D(m_pQ, 2, 2, m_dSigmaHeading*m_dSigmaSpeed);
         cvSetReal2D(m_pQ, 3, 3, m_dSigmaSpeed*m_dSigmaSpeed);        
 
         /* these are the diagonal entries of the "R matrix, also
            assumed to be uncorrellated. */
         cvSetReal2D(m_pR, 0, 0, m_dSigmaPositionMeas*m_dSigmaPositionMeas);
         cvSetReal2D(m_pR, 1, 1, m_dSigmaPositionMeas*m_dSigmaPositionMeas);
-        cvSetReal2D(m_pR, 2, 2, m_dSigmaHeadingMeas*m_dSigmaHeadingMeas);
 
         /* this step actually copies the Q and R matrices to the UKF
            and makes sure that it's internals are properly initialized -
@@ -640,15 +587,21 @@ void DanceTracker::doTracking(IplImage* frame)
     cvThreshold(m_pVFrame, m_pTempFrame1, m_iVThresh_Low, 255, CV_THRESH_BINARY);
     cvThreshold(m_pVFrame, m_pTempFrame2, m_iVThresh_High, 255, CV_THRESH_BINARY_INV);
     cvAnd(m_pTempFrame1, m_pTempFrame2, m_pTempFrame1);
-    cvAnd(m_pThreshFrame, m_pTempFrame1, m_pThreshFrame);
+    cvAnd(m_pThreshFrame, m_pTempFrame1, m_pTempFrame1);
 
+    cvSub(BG_frame, m_pVFrame, m_pTempFrame2);
+    cvThreshold(m_pTempFrame2, m_pTempFrame2, m_iBGThresh, 255, CV_THRESH_BINARY);
+
+    cvOr(m_pTempFrame1, m_pTempFrame2, m_pThreshFrame);
     cvSmooth(m_pThreshFrame, m_pThreshFrame, CV_MEDIAN, 3);
+    
     if(ROI_frame)
     {
         cvAnd(m_pThreshFrame, ROI_frame, m_pThreshFrame);
     }
+                
 
-    std::vector<YABlob> yblobs = m_YABlobber.FindBlobs(m_pThreshFrame,
+/*    std::vector<YABlob> yblobs = m_YABlobber.FindBlobs(m_pThreshFrame,
                                                        5,
                                                        m_iBlobAreaThreshLow,
                                                        NO_MAX,
@@ -664,304 +617,155 @@ void DanceTracker::doTracking(IplImage* frame)
         m_vdBlobs_X[i] = yblobs[i].COMx;
         m_vdBlobs_Y[i] = yblobs[i].COMy;
         m_vdBlobs_Orientation[i] = 0;
+        }*/
+
+    m_vbNoMeasurement.assign(m_iNObj, false);
+    
+    Dance_Segmenter segmenter(this);
+    segmenter.setDebugFile(stdout);
+    segmenter.m_iMinBlobPerimeter = 1;
+    segmenter.m_iMinBlobArea = m_iBlobAreaThreshLow;
+    segmenter.m_iMaxBlobArea = m_iBlobAreaThreshHigh;
+    segmenter.m_dOverlapFactor = m_dOverlapFactor;
+
+    if(m_iFrameCounter <= 2)
+    {
+        std::ifstream in_file;
+        in_file.open("initials.dat");
+        double x, y;
+
+        m_vBlobs.resize(0);
+        for(unsigned int i = 0; i < m_iNObj; i++)
+        {
+            in_file >> x;
+            in_file >> y;
+            m_vBlobs.push_back(DSGYA_Blob(x, y, 5, 0, 5, 5, 5, 100, 0));
+        }
+
+/*        m_vBlobs = segmenter.segmentFirstFrame(m_pThreshFrame,
+          m_iNObj); */
+    }
+    else
+    {
+        m_vBlobs = segmenter.doSegmentation(m_pThreshFrame, m_vBlobs);
+    }
+    
+    unsigned int sc = 0;
+    bool same_frame = false;
+    for(unsigned int i = 0; i < m_vBlobs.size(); i++)
+    {
+        if(m_vdBlobs_X[i] == m_vBlobs[i].m_dXCenter)
+        {
+            sc++;
+        }
+        m_vdBlobs_X[i] = m_vBlobs[i].m_dXCenter;
+        m_vdBlobs_Y[i] = m_vBlobs[i].m_dYCenter;
+        m_vdBlobs_Orientation[i] = m_vBlobs[i].m_dOrientation;
     }
 
-    /*
-    m_pGYBlobber->m_iBlob_area_thresh_low = m_iBlobAreaThreshLow;
-    m_pGYBlobber->m_iBlob_area_thresh_high = m_iBlobAreaThreshHigh;
-    std::vector<GYBlob> gyblobs = m_pGYBlobber->findBlobs(m_pThreshFrame);
-    
-    int nb = gyblobs.size();
-    m_vdBlobs_X.resize(nb);
-    m_vdBlobs_Y.resize(nb);
-    m_vdBlobs_Orientation.resize(nb);
-    for(unsigned int i = 0; i < gyblobs.size(); i++)
+    same_frame = (sc >= m_iNObj - 2);
+    if(same_frame)
     {
-        m_vdBlobs_X[i] = gyblobs[i].m_dXCentre;
-        m_vdBlobs_Y[i] = gyblobs[i].m_dYCentre;
-        m_vdBlobs_Orientation[i] = 0;
-    }*/
-    
+        return;
+    }
 
-    /*
-	 * m_pGYBlobber->m_iBlob_area_thresh_low = m_iBlobAreaThreshLow;
-	 * m_pGYBlobber->m_iBlob_area_thresh_high = m_iBlobAreaThreshHigh;
-	 * m_pGYBlobber->setSearchArea(m_SearchArea);
-     * std::vector<GYBlob> blobs = m_pGYBlobber->findBlobs(m_pThreshFrame);
-     * 
-     * /\* Matching step.
-     *  *
-     *  * After the blobbing step, we have N position measurements that
-     *  * we need to match up with N previously estimated positions.
-     *  * I.e. We need to assign measurement[j] to object[i], but we
-     *  * don't know which j goes with which i.  This is the job of the
-     *  * matcher; we load it up with a matrix where the [j,i] position
-     *  * is the squared distance between measurement[j] and object[i].
-     *  * The matcher figures out the optimal assignment between j's and
-     *  * i's to minimize the total sum of squared distances.  It's
-     *  * called a Hungarian matcher because it uses something called the
-     *  * "Hungarian Algorithm" to solve the optimization problem.
-     *  *
-     *  * Note that the matrix need not hold squared distances.  It could
-     *  * hold anything representing the "cost" of matching
-     *  * measurement[j] with object[i].
-     *  * 
-     *  *\/
-     * if(m_iFrameCounter > 1)
-     * {
-     *     double dx, dy;
-     *     for(unsigned int i = 0; i < m_iNObj; i++)
-     *     {
-     *         for(unsigned int j = 0; j < m_iNObj; j++)
-     *         {
-     *             dx = (m_vdBlobs_X[j] - blobs[i].m_dXCentre);
-     *             dy = (m_vdBlobs_Y[j] - blobs[i].m_dYCentre);
-     *             m_HungarianMatcher.setValue(j, i, dx*dx+dy*dy);
-     *         }
-     *     }
-     *     m_HungarianMatcher.doMatch(&m_viMatchAssignments);
-     * }
-     * else
-     * {
-     *     /\* on the first frame, there's no history to compare to, so
-     *        we'll just keep the order given by the blobber, i.e. i = j. *\/
-     *     m_viMatchAssignments.resize(m_iNObj);
-     *     for(unsigned int i = 0; i < m_iNObj; i++)
-     *     {
-     *         m_viMatchAssignments[i] = i;
-     *     }
-     * }
-     * 
-     * /\* Tracking / UKF / State Estimation
-     *  *
-     *  * Now that we've got the mapping of which measurement goes with
-     *  * which object, we need to feed the measurements into the UKF in
-     *  * order to obtain a state estimate.
-     *  *
-     *  * This is a loop over each object we're tracking. 
-     *  *\/
-     * unsigned int j;
-	 * MT_BoundingBox object_limits;    
-     * for(unsigned int i = 0; i< m_iNObj; i++)
-     * {
-     *     /\* The index of the optimal measurement as determined by the
-     *        matching algorithm. *\/
-     *     j = m_viMatchAssignments[i];
-     * 
-     *     /\* Copy the raw blob data to the output vectors -
-     *      *   It wasn't strictly necessary to use the matching for
-     *      *   this, but it keeps the trajectories aligned when we look
-     *      *   at the raw data. *\/
-     *     m_vdBlobs_X[i] = blobs[j].m_dXCentre;
-     *     m_vdBlobs_Y[i] = blobs[j].m_dYCentre;
-     *     m_vdBlobs_Area[i] = blobs[j].m_dArea;
-     *     m_vdBlobs_Orientation[i] = blobs[j].m_dOrientation;
-     *     m_vdBlobs_MajorAxis[i] = blobs[j].m_dMajorAxis;
-     *     m_vdBlobs_MinorAxis[i] = blobs[j].m_dMinorAxis;
-     *     m_vdBlobs_Speed[i] = 0;  /\* not getting speed from the blobs *\/
-     * 
-     *     /\* update the position histories - see definition of
-     *        rollHistories *\/
-     *     rollHistories(&m_vdHistories_X[i],
-     *                   &m_vdHistories_Y[i],
-     *                   m_vdBlobs_X[i],
-     *                   m_vdBlobs_Y[i]);
-     * 
-     *     /\* we could throw out a measurement and use the blob
-     *        state as an estimate for various reasons.  On the first
-     *        frame we want to set the initial state, so we flag the
-     *        measurement as invalid *\/
-     *     bool valid_meas = m_iFrameCounter > 1;
-     * 
-     *     /\* if any state is NaN, reset the UKF
-     *      * This shouldn't happen anymore, but it's a decent safety
-     *      * check.  It could probably be omitted if we want to
-     *      * optimize for speed... *\/
-     *     if(m_iFrameCounter > 1 &&
-     *        (!CvMatIsOk(m_vpUKF[i]->x) ||
-     *         !CvMatIsOk(m_vpUKF[i]->P)))
-     *     {
-     *         MT_UKFFree(&(m_vpUKF[i]));
-     *         m_vpUKF[i] = MT_UKFInit(4, 3, 0.1);
-     *         MT_UKFCopyQR(m_vpUKF[i], m_pQ, m_pR);
-     *         valid_meas = false;
-     *     }
-     * 
-     *     /\* if we're going to accept this measurement *\/
-     *     if(valid_meas)
-     *     {
-     *         /\* UKF prediction step, note we use function pointers to
-     *            the fish_dynamics and fish_measurement functions defined
-     *            above.  The final parameter would be for the control input
-     *            vector, which we don't use here so we pass a NULL pointer *\/
-     *         MT_UKFPredict(m_vpUKF[i],
-     *                       &fish_dynamics,
-     *                       &fish_measurement,
-     *                       NULL);
-     * 
-     *         /\* Angle Madness
-     *          *
-     *          * Getting the orientation angle is one of the trickiest
-     *          * parts of tracking.  There's a couple reasons for this.
-     *          *
-     *          * 1. Measurements of orientation are
-     *          *        highly prone to pointing in the opposite
-     *          *        direction (confusing the head for the tail).
-     *          *
-     *          * 2. Orientation measurements will be fixed in a range of
-     *          *        [-\pi, \pi] or [0, 2\pi], etc, which creates
-     *          *        discontinuities in the measurement.  That is,
-     *          *        suppose your object is moving to the left in the
-     *          *        image plane, so its heading is hovering right
-     *          *        around \pi.  The measurement could go, in one
-     *          *        time step, from \pi - 0.001 to -\pi + 0.001.
-     *          *        This is a bad thing.
-     *          *
-     *          * Here's how we handle these problems.
-     *          *
-     *          * 1.   A) By default, we trust the orientation measurement.
-     *          *            It uses an algorithm that should be able to
-     *          *            distinguish the head from the tail.
-     *          *      B) We keep a history of past positions.  If the
-     *          *            object has moved far enough in the last few
-     *          *            time steps, we use the use the displacement
-     *          *            vector as a cue.  Otherwise we use the last
-     *          *            known orientation estimate as a cue.
-     *          *      C) The orientation measurement is compared to the
-     *          *            cue.  If the two are similar (see below),
-     *          *            the measurement is used as-is.  If they are
-     *          *            not similar, 180 degrees is subtracted from
-     *          *            the measurement.
-     *          *
-     *          * 2.  A) A shortest-arc difference between the
-     *          *            measurement and last known orientation is
-     *          *            calculated.
-     *          *     B) Due to the way we calculate
-     *          *            the orientation measurement, this difference
-     *          *            is most likely less than 90 degrees in
-     *          *            magnitude.
-     *          *     C) The actual measurement given
-     *          *            to the UKF is the current orientation
-     *          *            estimate plus the calculated difference.
-     *          * 
-     *          *\/
-     *         double th;
-     *         bool a = false;
-     *         if(m_vdHistories_X[i].size() == N_hist)
-     *         {
-     *             double dx = m_vdHistories_X[i].at(N_hist-1) -
-     *                 m_vdHistories_X[i].at(0);
-     *             double dy = m_vdHistories_Y[i].at(N_hist-1) -
-     *                 m_vdHistories_Y[i].at(0);
-     * 
-     *             double min_pix_move = 2.0;
-     * 
-     *             /\* if the object has moved far enough *\/
-     *             if(dx*dx + dy*dy > min_pix_move*min_pix_move)
-     *             {
-     *                 /\* negative sign accounts for screen coordinates *\/
-     *                 th = atan2(-dy,dx);
-     *                 a = true;
-     *             }
-     *         }
-     * 
-     *         /\* if we don't have enough history or didn't move far
-     *            enough, use the previous orientation *\/
-     *         if(!a)
-     *         {
-     *             th = cvGetReal2D(m_vpUKF[i]->x, 2, 0);
-     *         }
-     * 
-     *         /\* this is how we determine if the two angles are "close"
-     *            - the magnitude of the order parameter, which is
-     *            equivalent to the length of the average phasor, i.e.
-     *            pth = 0.5*|e^{i*th} + e^{i*orientation measurement}|
-     *         *\/
-     *         double pth = fabs(
-     *             cos(0.5*(th - MT_DEG2RAD*m_vdBlobs_Orientation[i]))
-     *             );
-     * 
-     *         /\* sqrt(2)/2 is what we'd get if the angles differ by 90
-     *            degrees *\/
-     *         if(pth < 0.7)  /\* a little less than sqrt(2)/2 *\/
-     *         {
-     *             /\* looks like the orientation is opposite of what it
-     *                should be, so subtract 180 degrees. *\/
-     *             m_vdBlobs_Orientation[i] =
-     *                 m_vdBlobs_Orientation[i] - 180.0;
-     *         }
-     * 
-     *         /\* taking asin(sin(angle)) ensures that |angle| < pi,
-     *          * i.e. we get the shortest-arc distance  *\/
-     *         double dth = asin(sin(MT_DEG2RAD*m_vdBlobs_Orientation[i]
-     *                                 - cvGetReal2D(m_vpUKF[i]->x, 2, 0)));
-     * 
-     *         /\* finally, set the measurement vector z *\/
-     *         cvSetReal2D(m_pz, 0, 0, m_vdBlobs_X[i]);
-     *         cvSetReal2D(m_pz, 1, 0, m_vdBlobs_Y[i]);
-     *         cvSetReal2D(m_pz, 2, 0, cvGetReal2D(m_vpUKF[i]->x, 2, 0) + dth);
-     *         MT_UKFSetMeasurement(m_vpUKF[i], m_pz);
-     * 
-     *         /\* then do the UKF correction step, which accounts for the
-     *            measurement *\/
-     *         MT_UKFCorrect(m_vpUKF[i]);
-     * 
-     *         /\* then constrain the state if necessary - see function
-     *          * definition above *\/
-     *         constrain_state(m_vpUKF[i]->x, m_vpUKF[i]->x1, frame);            
-     * 
-     *     }
-     *     else  
-     *     {
-     *        /\* measurement was not valid -> set the state.
-     *          this happens on the first time step as well; this is
-     *          where the initial conditions of the UKF are set. *\/
-     *         cvSetReal2D(m_px0, 0, 0, m_vdBlobs_X[i]);
-     *         cvSetReal2D(m_px0, 1, 0, m_vdBlobs_Y[i]);
-     *         cvSetReal2D(m_px0, 2, 0, MT_DEG2RAD*m_vdBlobs_Orientation[i]);
-     *         cvSetReal2D(m_px0, 3, 0, 0.1);
-     *         MT_UKFSetState(m_vpUKF[i], m_px0);
-     *     }
-     * 
-     *     /\* grab the state estimate and store it in variables that will
-     *        make it convenient to save it to a file. *\/
-     *     CvMat* x = m_vpUKF[i]->x;
-     * 
-     *     m_vdTracked_X[i] = cvGetReal2D(x, 0, 0);
-     *     m_vdTracked_Y[i] = cvGetReal2D(x, 1, 0);
-     *     m_vdTracked_Heading[i] = cvGetReal2D(x, 2, 0);
-     *     m_vdTracked_Speed[i] = cvGetReal2D(x, 3, 0);
-     * 
-	 *     object_limits.ShowX(m_vdTracked_X[i]);
-	 * 	object_limits.ShowY(m_vdTracked_Y[i]);
-     * 
-     *     /\* If we wanted the predicted state, this would be how to get
-     *        it *\/
-     *     /\* CvMat* xp = m_vpUKF[i]->x1; *\/
-     * }
-     * 
-	 * if(fabs(object_limits.xmax - object_limits.xmin) < 0.01*(m_iFrameWidth) ||
-     *    fabs(object_limits.ymax - object_limits.ymin) < 0.01*(m_iFrameHeight))
-	 * {
-	 * 	object_limits.ShowX(0);
-	 * 	object_limits.ShowY(0);
-	 * 	object_limits.ShowX(m_iFrameWidth);
-	 * 	object_limits.ShowY(m_iFrameHeight);
-	 * }
-     * 
-	 * double cx = 0.5*(object_limits.xmin + object_limits.xmax);
-	 * double cy = 0.5*(object_limits.ymin + object_limits.ymax);
-	 * double w = object_limits.xmax - object_limits.xmin + m_iSearchAreaPadding;
-	 * double h = object_limits.ymax - object_limits.ymin + m_iSearchAreaPadding;
-     * 
-	 * m_SearchArea = cvRect(MT_CLAMP(cx - 0.5*w, 0, m_iFrameWidth),
-	 * 	                  MT_CLAMP(cy - 0.5*h, 0, m_iFrameHeight),
-	 * 					  MT_CLAMP(w, 0, m_iFrameWidth),
-	 * 					  MT_CLAMP(h, 0, m_iFrameHeight));
-     * 
-     * 
-     * /\* write data to file *\/
-     * writeData(); */
+    /* Tracking / UKF / State Estimation
+     *
+     * Now that we've got the mapping of which measurement goes with
+     * which object, we need to feed the measurements into the UKF in
+     * order to obtain a state estimate.
+     *
+     * This is a loop over each object we're tracking. 
+     */
+
+    for(unsigned int i = 0; i< m_iNObj; i++)
+    {
+    
+        /* we could throw out a measurement and use the blob
+           state as an estimate for various reasons.  On the first
+           frame we want to set the initial state, so we flag the
+           measurement as invalid */
+        bool invalid_meas =  m_vbNoMeasurement[i];
+        bool need_state = m_iFrameCounter == 1;
+        
+        /* if any state is NaN, reset the UKF
+         * This shouldn't happen anymore, but it's a decent safety
+         * check.  It could probably be omitted if we want to
+         * optimize for speed... */
+        if(m_iFrameCounter > 1 &&
+           (!CvMatIsOk(m_vpUKF[i]->x) ||
+            !CvMatIsOk(m_vpUKF[i]->P)))
+        {
+            MT_UKFFree(&(m_vpUKF[i]));
+            m_vpUKF[i] = MT_UKFInit(4, 2, 0.1);
+            MT_UKFCopyQR(m_vpUKF[i], m_pQ, m_pR);
+            need_state = true;
+        }
+
+        if(need_state)
+        {
+            cvSetReal2D(m_px0, 0, 0, m_vdBlobs_X[i]);
+            cvSetReal2D(m_px0, 1, 0, m_vdBlobs_Y[i]);
+            cvSetReal2D(m_px0, 2, 0, 0);
+            cvSetReal2D(m_px0, 3, 0, 0);
+            MT_UKFSetState(m_vpUKF[i], m_px0);
+        }
+    
+        /* if we're going to accept this measurement */
+        if(!invalid_meas)
+        {
+            /* UKF prediction step, note we use function pointers to
+               the fish_dynamics and fish_measurement functions defined
+               above.  The final parameter would be for the control input
+               vector, which we don't use here so we pass a NULL pointer */
+            MT_UKFPredict(m_vpUKF[i],
+                          &dance_dynamics,
+                          &dance_measurement,
+                          NULL);
+    
+            /* finally, set the measurement vector z */
+            cvSetReal2D(m_pz, 0, 0, m_vdBlobs_X[i]);
+            cvSetReal2D(m_pz, 1, 0, m_vdBlobs_Y[i]);
+
+            MT_UKFSetMeasurement(m_vpUKF[i], m_pz);
+    
+            /* then do the UKF correction step, which accounts for the
+               measurement */
+            MT_UKFCorrect(m_vpUKF[i]);
+    
+    
+        }
+        else  
+        {
+            /* use the predicted state */
+            CvMat* xp = m_vpUKF[i]->x1;
+            MT_UKFSetState(m_vpUKF[i], xp);
+        }
+
+        /* then constrain the state if necessary - see function
+         * definition above */
+        constrain_state(m_vpUKF[i]->x, m_vpUKF[i]->x1, frame);            
+    
+        /* grab the state estimate and store it in variables that will
+           make it convenient to save it to a file. */
+        CvMat* x = m_vpUKF[i]->x;
+    
+        m_vdTracked_X[i] = cvGetReal2D(x, 0, 0);
+        m_vdTracked_Y[i] = cvGetReal2D(x, 1, 0);
+        m_vdTracked_Vx[i] = cvGetReal2D(x, 2, 0);
+        m_vdTracked_Vy[i] = cvGetReal2D(x, 3, 0);
+
+        /* take the tracked positions as the blob centers */
+        m_vBlobs[i].m_dXCenter = m_vdTracked_X[i];
+        m_vBlobs[i].m_dYCenter = m_vdTracked_Y[i];        
+    
+        /* If we wanted the predicted state, this would be how to get
+           it */
+        /* CvMat* xp = m_vpUKF[i]->x1; */
+    }
+    
+    /* write data to file */
+    writeData();
 
 }
 
@@ -990,13 +794,23 @@ void DanceTracker::doGLDrawing(int flags)
             blobcenter.sety(m_iFrameHeight - m_vdBlobs_Y[i]);
             blobcenter.setz( 0 );
 
+            double M, m;
+            M = MT_MAX(m_vBlobs[i].m_dMajorAxis, 0.01);
+            m = MT_MAX(m_vBlobs[i].m_dMinorAxis, 0.01);
+            
+            MT_DrawEllipse(blobcenter,
+                           M,
+                           m,
+                           m_vBlobs[i].m_dOrientation,
+                           MT_Primaries[i % MT_NPrimaries]);
+
             /* draws an arrow using OpenGL */
-            MT_DrawArrow(blobcenter,  // center of the base of the arrow
-                         20.0,        // arrow length (pixels)
-                         MT_DEG2RAD*m_vdBlobs_Orientation[i], // arrow angle
-                         MT_Primaries[i % MT_NPrimaries], // color
-                         1.0 // fixes the arrow width
-                );    
+            /* MT_DrawArrow(blobcenter,  // center of the base of the arrow
+             *              20.0,        // arrow length (pixels)
+             *              MT_DEG2RAD*m_vdBlobs_Orientation[i], // arrow angle
+             *              MT_Primaries[i % MT_NPrimaries], // color
+             *              1.0 // fixes the arrow width
+             *     );     */
         }
     }
 
@@ -1011,9 +825,11 @@ void DanceTracker::doGLDrawing(int flags)
             blobcenter.sety(m_iFrameHeight - m_vdTracked_Y[i]);
             blobcenter.setz( 0 );
 
+            double th = atan2(-m_vdTracked_Vy[i], m_vdTracked_Vx[i]);
+
             MT_DrawArrow(blobcenter,
                          25.0, 
-                         m_vdTracked_Heading[i],
+                         th,
                          MT_Primaries[i % MT_NPrimaries],
                          1.0 
                 );    

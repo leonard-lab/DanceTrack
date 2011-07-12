@@ -36,14 +36,14 @@ public:
     void setTestOut(FILE* fp);
 
     void doBlobFinding(IplImage* thresh_image);
-    void doSegmentation(int num_to_find);
+    void doSegmentation(int num_to_find, int max_iters = -1);
 
     void setInitials(std::vector<double> x_c,
                      std::vector<double> y_c,
                      std::vector<double> xx,
                      std::vector<double> xy,
                      std::vector<double> yy);
-    std::vector<GYBlob> findBlobs(IplImage* thresh_image, int num_to_find);
+    std::vector<GYBlob> findBlobs(IplImage* thresh_image, int num_to_find, int max_iters = -1);
 
     int m_iBlob_area_thresh_low;
     int m_iBlob_area_thresh_high;
