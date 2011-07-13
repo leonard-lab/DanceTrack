@@ -480,13 +480,14 @@ void DanceTracker::initDataFile()
     sprintf(v, "%d", m_iStopFrame);
     m_XDF.writeParameterToXML("Stopping Frame", v);
 
-    m_XDF.addDataStream("Blob X", "blob_x.dat");
+/*    m_XDF.addDataStream("Blob X", "blob_x.dat");
     m_XDF.addDataStream("Blob Y", "blob_y.dat");
     m_XDF.addDataStream("Blob Area", "blob_area.dat");
     m_XDF.addDataStream("Blob Orientation", "blob_orientation.dat");
     m_XDF.addDataStream("Blob Major Axis", "blob_major.dat");
-    m_XDF.addDataStream("Blob Minor Axis", "blob_minor.dat");
+    m_XDF.addDataStream("Blob Minor Axis", "blob_minor.dat");*/
 
+    m_XDF.addDataStream("Frame Number", "frame_num.dat");
     m_XDF.addDataStream("Tracked X", "tracked_x.dat");
     m_XDF.addDataStream("Tracked Y", "tracked_y.dat");    
     m_XDF.addDataStream("Tracked Heading", "tracked_heading.dat");    
@@ -500,13 +501,16 @@ void DanceTracker::writeData()
 {
     /* the XDF object handles writing data to the right files - all we
        have to do is pass the data as vectors */
-    m_XDF.writeData("Blob X"           , m_vdBlobs_X); 
+/*    m_XDF.writeData("Blob X"           , m_vdBlobs_X); 
     m_XDF.writeData("Blob Y"           , m_vdBlobs_Y); 
     m_XDF.writeData("Blob Area"        , m_vdBlobs_Area); 
     m_XDF.writeData("Blob Orientation" , m_vdBlobs_Orientation); 
     m_XDF.writeData("Blob Major Axis"  , m_vdBlobs_MajorAxis); 
-    m_XDF.writeData("Blob Minor Axis"  , m_vdBlobs_MinorAxis); 
-
+    m_XDF.writeData("Blob Minor Axis"  , m_vdBlobs_MinorAxis); */
+    
+    m_vdTimeNow.resize(1);
+    m_vdTimeNow[0] = m_iFrameCounter;
+    m_XDF.writeData("Frame Number"     , m_vdTimeNow);
     m_XDF.writeData("Tracked X"        , m_vdTracked_X); 
     m_XDF.writeData("Tracked Y"        , m_vdTracked_Y); 
     m_XDF.writeData("Tracked Heading"  , m_vdTracked_Vx); 

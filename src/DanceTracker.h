@@ -106,6 +106,7 @@ private:
 
     std::vector<bool> m_vbNoMeasurement;
 
+    std::vector<double> m_vdTimeNow;
     std::vector<double> m_vdTracked_X;
     std::vector<double> m_vdTracked_Y;
     std::vector<double> m_vdTracked_Vx;
