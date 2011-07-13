@@ -6,7 +6,7 @@
 
 #define DEBUG_OUT(...) if(m_pDebugFile){fprintf(m_pDebugFile, __VA_ARGS__); fflush(m_pDebugFile);}
 
-void spit_mat(unsigned int* m, unsigned int rows, unsigned int cols, FILE* f)
+void spit_mat(const std::vector<unsigned int>& m, unsigned int rows, unsigned int cols, FILE* f)
 {
     for(unsigned int i = 0; i < rows; i++)
     {
@@ -47,7 +47,7 @@ std::vector<T> remove_indeces_from_vector(const std::vector<T>& in_vector,
 }
 
 bool one_to_one_match(int k,
-                      unsigned int* label,
+                      const std::vector<unsigned int>& label,
                       int nobjs, int nblobs,
                       unsigned int* ko,
                       unsigned int* kb)
@@ -283,10 +283,10 @@ std::vector<DSGYA_Blob> DSGYA_Segmenter::doSegmentation(const IplImage* I,
 
     unsigned int rows = in_blobs.size();
     unsigned int cols = yblobs.size();
-    unsigned int* adj = BiCC_CreateMat(rows, cols);
-    unsigned int* label_M = BiCC_CreateMat(rows, cols);
-    unsigned int* label = BiCC_CreateMat(1, rows + cols);
 
+    std::vector<unsigned int> adj(rows*cols, 0);
+    BiCC bicc(rows, cols);
+    
     DEBUG_OUT("Found %d blobs for %d objects\n", rows, cols);
     
     for(unsigned int i = 0; i < rows; i++)
@@ -303,17 +303,17 @@ std::vector<DSGYA_Blob> DSGYA_Segmenter::doSegmentation(const IplImage* I,
         spit_mat(adj, rows, cols, m_pDebugFile);
     }
 
-    int n_cc = BiCC_Do(adj, rows, cols, label, label_M);
+    int n_cc = bicc.findComponents(adj);
 
     DEBUG_OUT("Found %d components, label matrix:\n", n_cc);
     if(m_pDebugFile)
     {
-        spit_mat(label_M, rows, cols, m_pDebugFile);
+        spit_mat(bicc.getLabelMatrix(), rows, cols, m_pDebugFile);
     }
     DEBUG_OUT("Label vector:\n");
     if(m_pDebugFile)
     {
-        spit_mat(label, 1, rows + cols, m_pDebugFile);
+        spit_mat(bicc.getLabelVector(), 1, rows + cols, m_pDebugFile);
     }
 
     std::vector<unsigned int> objs_this_comp(0);
@@ -326,7 +326,7 @@ std::vector<DSGYA_Blob> DSGYA_Segmenter::doSegmentation(const IplImage* I,
         blobs_this_comp.resize(0);
         for(unsigned int k = 0; k < rows+cols; k++)
         {
-            if(label[k] == i)
+            if(bicc.getLabelElement(k) == i)
             {
                 if(k < rows)
                 {
@@ -411,16 +411,15 @@ std::vector<DSGYA_Blob> DSGYA_Segmenter::doSegmentation(const IplImage* I,
 
                 /* try to extract as many individual blobs as possible */
                 /* DEBUG_OUT("Trying to extract individual blobs\n");
-                 * unsigned int* o_adj = BiCC_CreateMat(nobjs, nblobs);
-                 * unsigned int* o_label_M = BiCC_CreateMat(nobjs, nblobs);
-                 * unsigned int* o_label = BiCC_CreateMat(1, nobjs + nblobs);
+                 * std::vector<unsigned int> o_adj(nobjs*nblobs, 0);
+                 * BiCC o_bicc(nobjs, nblobs);
                  * 
                  * for(unsigned int ko = 0; ko < nobjs; ko++)
                  * {
                  *     for(unsigned int kb = 0; kb < nblobs; kb++)
                  *     {
-                 *         o_adj[ko*nobjs + kb] = areOverlapping(&out_blobs[objs_this_comp[ko]],
-                 *                                               yblobs[blobs_this_comp[kb]]);
+                 *         o_adj[ko*nblobs + kb] = areOverlapping(&out_blobs[objs_this_comp[ko]],
+                 *                                                yblobs[blobs_this_comp[kb]]);
                  *     }
                  * }
                  * 
@@ -430,18 +429,18 @@ std::vector<DSGYA_Blob> DSGYA_Segmenter::doSegmentation(const IplImage* I,
                  *     spit_mat(o_adj, nobjs, nblobs, m_pDebugFile);
                  * }
                  * 
-                 * int o_n_cc = BiCC_Do(o_adj, nobjs, nblobs, o_label, o_label_M);
+                 * int o_n_cc = o_bicc.findComponents(o_adj);
                  * 
                  * DEBUG_OUT("Found %d components, label matrix:\n", o_n_cc);
                  * if(m_pDebugFile)
                  * {
-                 *     spit_mat(o_label_M, nobjs, nblobs, m_pDebugFile);
+                 *     spit_mat(o_bicc.getLabelMatrix(), nobjs, nblobs, m_pDebugFile);
                  * }
                  * 
                  * DEBUG_OUT("Label vector:\n");
                  * if(m_pDebugFile)
                  * {
-                 *     spit_mat(o_label, 1, nobjs + nblobs, m_pDebugFile);
+                 *     spit_mat(o_bicc.getLabelVector(), 1, nobjs + nblobs, m_pDebugFile);
                  * }
                  * 
                  * unsigned int ko, kb;
@@ -449,19 +448,13 @@ std::vector<DSGYA_Blob> DSGYA_Segmenter::doSegmentation(const IplImage* I,
                  * std::vector<unsigned int> matched_blobs(0);
                  * for(unsigned int kk = 1; kk <= o_n_cc; kk++)
                  * {
-                 *     if(one_to_one_match(kk, o_label, nobjs, nblobs, &ko, &kb))
+                 *     if(one_to_one_match(kk, o_bicc.getLabelVector(), nobjs, nblobs, &ko, &kb))
                  *     {
                  *         DEBUG_OUT("Obj %d and blob %d match\n", ko, kb);
                  *         matched_objs.push_back(ko);
                  *         matched_blobs.push_back(kb);
                  *     }
                  * }
-                 * 
-                 * printf("Die?\n");  fflush(stdout);
-                 * BiCC_ReleaseMat(o_adj);
-                 * BiCC_ReleaseMat(o_label_M);
-                 * BiCC_ReleaseMat(o_label);
-                 * printf("Nope\n");  fflush(stdout);
                  * 
                  * for(unsigned int k = 0; k < matched_objs.size(); k++)
                  * {
@@ -551,10 +544,6 @@ std::vector<DSGYA_Blob> DSGYA_Segmenter::doSegmentation(const IplImage* I,
         }
         
     }
-
-    BiCC_ReleaseMat(adj);
-    BiCC_ReleaseMat(label);
-    BiCC_ReleaseMat(label_M);
 
     cvReleaseImage(&m_pBlobFrame);
         
