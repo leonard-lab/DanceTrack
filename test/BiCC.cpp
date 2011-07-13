@@ -1,118 +1,146 @@
-#include <cstdlib>
-#include <iostream>
+#include "BiCC.h"
 
-static unsigned int g_Rows = 0;
-static unsigned int g_Cols = 0;
-static unsigned int g_CurrentLabel = 0;
-static const unsigned int* g_adj = NULL;
-static unsigned int* g_label = NULL;
-static unsigned int* g_label_M = NULL;
-
-#define ADJACENT(i,j) (g_adj[i*g_Cols + j])
-#define ROW_LABEL(i) g_label[i]
-#define COL_LABEL(j) g_label[rows + j]
-#define UNLABELED_ADJACENT(i,j) (g_label_M[i*g_Cols + j] == 0) && (g_adj[i*g_Cols + j])
-#define LABELM(i,j) g_label_M[i*g_Cols + j] = g_CurrentLabel
-#define LABEL(i,j) g_label[i] = g_CurrentLabel; g_label[g_Rows + j] = g_CurrentLabel;
-
-static void follow_col(unsigned int j);
-static void follow_row(unsigned int i);
-
-unsigned int* BiCC_CreateMat(unsigned int rows, unsigned int cols)
+BiCC::BiCC(unsigned int rows, unsigned int cols)
+    : m_vuiLabelMatrix(rows*cols, 0),
+      m_vuiLabelVector(rows + cols, 0),
+      m_iNRows(rows),
+      m_iNCols(cols),
+      m_iCurrentLabel(0)
 {
-    unsigned int* r = (unsigned int*) calloc(rows*cols, sizeof(unsigned int));
-    for(unsigned int i = 0; i < rows*cols; i++)
+    doInit(rows, cols);
+}
+
+void BiCC::doInit(unsigned int rows, unsigned int cols)
+{
+    m_vuiLabelMatrix.assign(rows*cols, 0);
+    m_vuiLabelVector.assign(rows + cols, 0);
+    m_iNRows = rows;
+    m_iNCols = cols;
+    m_iCurrentLabel = 0;
+}
+
+unsigned int BiCC::getRowLabel(unsigned int i)
+{
+    if(i < m_iNRows)
     {
-        r[i] = 0;
+        return m_vuiLabelVector[i];
     }
-    return r;
+    return 0;
 }
 
-void BiCC_ReleaseMat(unsigned int* mat)
+unsigned int BiCC::getColLabel(unsigned int j)
 {
-    free(mat);
+    if(j < m_iNCols)
+    {
+        return m_vuiLabelVector[m_iNRows + j];
+    }
+    return 0;
 }
 
-int BiCC_Do(const unsigned int* adj_sub,
-            unsigned int rows,
-            unsigned int cols,
-            unsigned int* label,
-            unsigned int* label_M)
+unsigned int BiCC::getLabelElement(unsigned int k)
 {
-    int count = 0;
-    g_Rows = rows;
-    g_Cols = cols;
-    g_adj = adj_sub;
-    g_label = label;
-    g_label_M = label_M;
+    if(k < m_vuiLabelVector.size())
+    {
+        return m_vuiLabelVector[k];
+    }
+    return 0;
+}
+
+int BiCC::findComponents(const std::vector<unsigned int>& adj_sub)
+{
+    m_vuiAdj = adj_sub;
 
     int empty_row;
-    g_CurrentLabel = 0;
-    /* move along the rows (top), follow any components */
-    for(unsigned int i = 0; i < rows; i++)
+    m_iCurrentLabel = 0;
+
+    /* move along the rows (top), follow any components */    
+    for(unsigned int i = 0; i < m_iNRows; i++)
     {
         empty_row = 1;
-        for(unsigned int j = 0; j < cols; j++)
+        for(unsigned int j = 0; j < m_iNCols; j++)
         {
-            if(ADJACENT(i,j))
+            if(areAdjacent(i, j))
             {
                 empty_row = 0;
             }
-            
-            if(UNLABELED_ADJACENT(i,j))
+
+            if(unlabeledAdjacent(i, j))
             {
-                g_CurrentLabel++;
-                LABELM(i, j);
-                LABEL(i,j);
-                follow_row(i);
-                follow_col(j);
+                m_iCurrentLabel++;
+                setLabelM(i, j);
+                setLabel(i, j);
+                followRow(i);
+                followCol(j);
             }
         }
         if(empty_row)
         {
-            ROW_LABEL(i) = ++g_CurrentLabel;
+            m_iCurrentLabel++;
+            setRowLabel(i);
         }
     }
 
-    for(unsigned int j = 0; j < cols; j++)
+    for(unsigned int j = 0; j < m_iNCols; j++)
     {
-        if(g_label[rows + j] == 0)
+        if(m_vuiLabelVector[m_iNRows + j] == 0)
         {
-            g_label[rows+j] = ++g_CurrentLabel;
+            m_vuiLabelVector[m_iNRows + j] = ++m_iCurrentLabel;
         }
     }
-    
-    g_adj = NULL;
-    g_label = NULL;
-    g_label_M = NULL;
 
-    return g_CurrentLabel;
+    return m_iCurrentLabel;
 }
 
-static void follow_col(unsigned int j)
+void BiCC::followCol(unsigned int j)
 {
-    for(unsigned int i = 0; i < g_Rows; i++)
+    for(unsigned int i = 0; i < m_iNRows; i++)
     {
-        if(UNLABELED_ADJACENT(i,j))
+        if(unlabeledAdjacent(i, j))
         {
-            LABELM(i, j);
-            LABEL(i,j);
-            follow_row(i);
-            follow_col(j);
+            setLabelM(i, j);
+            setLabel(i, j);
+            followRow(i);
+            followCol(j);
         }
     }
 }
 
-static void follow_row(unsigned int i)
+void BiCC::followRow(unsigned int i)
 {
-    for(unsigned int j = 0; j < g_Cols; j++)
+    for(unsigned int j = 0; j < m_iNCols; j++)
     {
-        if(UNLABELED_ADJACENT(i,j))
+        if(unlabeledAdjacent(i, j))
         {
-            LABELM(i,j);
-            LABEL(i,j);
-            follow_col(j);
-            follow_row(i);
+            setLabelM(i, j);
+            setLabel(i, j);
+            followCol(j);
+            followRow(i);
         }
     }
+}
+
+bool BiCC::areAdjacent(unsigned int i, unsigned int j)
+{
+    return (m_vuiAdj[i*m_iNCols + j] > 0);
+}
+
+bool BiCC::unlabeledAdjacent(unsigned int i, unsigned int j)
+{
+    return (m_vuiAdj[i*m_iNCols + j] > 0) && (m_vuiLabelMatrix[i*m_iNCols + j] == 0);
+}
+
+void BiCC::setLabelM(unsigned int i, unsigned int j)
+{
+    m_vuiLabelMatrix[i*m_iNCols + j] = m_iCurrentLabel;
+}
+
+void BiCC::setLabel(unsigned int i, unsigned int j)
+{
+    m_vuiLabelVector[i] = m_iCurrentLabel;
+    m_vuiLabelVector[m_iNRows + j] = m_iCurrentLabel;
+}
+
+void BiCC::setRowLabel(unsigned int i)
+{
+    m_vuiLabelVector[i] = m_iCurrentLabel;
 }
