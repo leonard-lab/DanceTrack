@@ -1,0 +1,43 @@
+<?xml version="1.0" ?>
+<TrackingDataExperimentData>
+    <Parameters>
+        <Starting_Frame>-1</Starting_Frame>
+        <Stopping_Frame>-1</Stopping_Frame>
+        <Video_Source>../movies/DanceShort1.mov</Video_Source>
+        <User_Note>None</User_Note>
+        <Date>07/13/11</Date>
+        <Time>11:22:53</Time>
+    </Parameters>
+    <DataFiles>
+        <Frame_Number>Flock1/frame_num.dat</Frame_Number>
+        <Tracked_X>Flock1/tracked_x.dat</Tracked_X>
+        <Tracked_Y>Flock1/tracked_y.dat</Tracked_Y>
+        <Tracked_Heading>Flock1/tracked_heading.dat</Tracked_Heading>
+        <Tracked_Speed>Flock1/tracked_speed.dat</Tracked_Speed>
+    </DataFiles>
+    <Data_Group_Blob_Tracking_Parameters>
+        <H_min>82</H_min>
+        <H_max>100</H_max>
+        <S_min>20</S_min>
+        <S_max>255</S_max>
+        <V_min>210</V_min>
+        <V_max>255</V_max>
+        <BG_Thresh>255</BG_Thresh>
+        <Min_Blob_Area>5</Min_Blob_Area>
+        <Max_Blob_Area>1000</Max_Blob_Area>
+        <Overlap_Factor>1.500000</Overlap_Factor>
+        <Search_Area_Padding>100</Search_Area_Padding>
+        <Position_Disturbance_Sigma>1.000000</Position_Disturbance_Sigma>
+        <Speed_Disturbance_Sigma>0.100000</Speed_Disturbance_Sigma>
+        <Position_Measurement_Sigma>10.000000</Position_Measurement_Sigma>
+    </Data_Group_Blob_Tracking_Parameters>
+    <Data_Group_Drawing_Options>
+        <Show_blob_arrows>true</Show_blob_arrows>
+        <Show_tracking_arrows>false</Show_tracking_arrows>
+    </Data_Group_Drawing_Options>
+    <Data_Group_XDF_Settings>
+        <X_Playback_Data>Unknown</X_Playback_Data>
+        <Y_Playback_Data>Unknown</Y_Playback_Data>
+        <Playback_Frame_Period>32</Playback_Frame_Period>
+    </Data_Group_XDF_Settings>
+</TrackingDataExperimentData>
