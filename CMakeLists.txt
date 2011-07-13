@@ -32,15 +32,14 @@ set(APP_SRC
   src/DanceTracker.h
   src/DSGYBlobber.cpp
   src/DSGYBlobber.h
-  test/DSGYA_Segmenter.cpp
-  test/DSGYA_Segmenter.h
-  test/BiCC.cpp
-  test/BiCC.h
+  src/DSGYA_Segmenter.cpp
+  src/DSGYA_Segmenter.h
+  src/BiCC.cpp
+  src/BiCC.h
   )
 
 # adds src to the header search path
 include_directories(src)
-include_directories(test)
 
 # sets up the build target
 add_executable(${APP_NAME} WIN32 MACOSX_BUNDLE ${APP_SRC})

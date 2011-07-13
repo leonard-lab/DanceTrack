@@ -4,7 +4,7 @@
 #include "MT_Core.h"
 #include "MT_Tracking.h"
 
-#include "../test/DSGYA_Segmenter.h"
+#include "DSGYA_Segmenter.h"
 
 const double DEFAULT_SIGMA_POSITION = 4.0; /* pixels */
 const double DEFAULT_SIGMA_HEADING = 0.26; /* rad ~= 15 deg */
