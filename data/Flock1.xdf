@@ -36,8 +36,8 @@
         <Show_tracking_arrows>false</Show_tracking_arrows>
     </Data_Group_Drawing_Options>
     <Data_Group_XDF_Settings>
-        <X_Playback_Data>Unknown</X_Playback_Data>
-        <Y_Playback_Data>Unknown</Y_Playback_Data>
+        <X_Playback_Data>Tracked X</X_Playback_Data>
+        <Y_Playback_Data>Tracked Y</Y_Playback_Data>
         <Playback_Frame_Period>32</Playback_Frame_Period>
     </Data_Group_XDF_Settings>
 </TrackingDataExperimentData>
