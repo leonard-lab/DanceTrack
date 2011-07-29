@@ -1,5 +1,12 @@
 #include "BiCC.h"
 
+#include <algorithm>
+
+unsigned int BiCC::getNumberOfLabels(const std::vector<unsigned int>& labels)
+{
+    return *std::max_element(labels.begin(), labels.end());
+}
+
 BiCC::BiCC(unsigned int rows, unsigned int cols)
     : m_vuiLabelMatrix(rows*cols, 0),
       m_vuiLabelVector(rows + cols, 0),

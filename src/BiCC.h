@@ -17,6 +17,10 @@ public:
     unsigned int getRowLabel(unsigned int i);
     unsigned int getColLabel(unsigned int j);
     unsigned int getLabelElement(unsigned int k);
+    unsigned int getNumRows() const {return m_iNRows;};
+    unsigned int getNumCols() const {return m_iNCols;};    
+
+    static unsigned int getNumberOfLabels(const std::vector<unsigned int>& labels);
     
 private:
     std::vector<unsigned int> m_vuiLabelMatrix;
