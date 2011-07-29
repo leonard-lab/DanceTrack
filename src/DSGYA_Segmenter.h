@@ -3,6 +3,7 @@
 
 #include <vector>
 
+#include "MT/MT_Core/support/filesupport.h"
 #include "MT/MT_Tracking/trackers/YA/YABlobber.h"
 #include "MT/MT_Tracking/trackers/GY/GYBlobs.h"
 
@@ -33,6 +34,9 @@ public:
     double m_dOrientation;
     double m_dRhoContrib;
 };
+
+bool writeDSGYABlobsToFile(const std::vector<DSGYA_Blob>& blobs, const char* filename);
+std::vector<DSGYA_Blob> readDSGYABlobsFromFile(const char* filename);
 
 class DSGYA_Segmenter
 {

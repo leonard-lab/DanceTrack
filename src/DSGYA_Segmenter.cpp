@@ -69,6 +69,97 @@ bool one_to_one_match(int k,
     return (matches == 1);
 }
 
+bool writeDSGYABlobsToFile(const std::vector<DSGYA_Blob>& blobs, const char* filename)
+{
+    if(!MT_FileIsAvailable(filename, "w"))
+    {
+        fprintf(stderr, "writeDSGYABlobsToFile:  Unable to open file %s for writing.\n",
+                filename);
+        return false;
+    }
+
+    ofstream fs(filename);
+
+    for(unsigned int i = 0; i < blobs.size(); i++)
+    {
+        fs << blobs[i].m_dXCenter << " "
+           << blobs[i].m_dYCenter << " "
+           << blobs[i].m_dXXMoment << " "
+           << blobs[i].m_dXYMoment << " "
+           << blobs[i].m_dYYMoment << " "
+           << blobs[i].m_dMinorAxis << " "
+           << blobs[i].m_dMajorAxis << " "
+           << blobs[i].m_dArea << " "
+           << blobs[i].m_dOrientation << std::endl;
+    }
+    
+    fs.close();
+
+    return true;
+}
+
+std::vector<DSGYA_Blob> readDSGYABlobsFromFile(const char* filename)
+{
+    std::vector<DSGYA_Blob> blobs(0);
+
+    FILE* fp = fopen(filename, "r");
+    if(!fp)
+    {
+        fprintf(stderr, "readDSGYABlobsFromFile Error:  Cannot read file %s.  "
+                "An empty blob vector will be returned.\n", filename);
+        return blobs;
+    }
+
+    int n = MT_GetNumberOfLinesInFile(filename);
+    if(n <= 0)
+    {
+        fprintf(stderr, "readDSGYABlobsFromFile Error:  No data in file %s.  "
+                "An empty blob vector will be returned.\n", filename);
+        fclose(fp);
+        return blobs;
+    }
+
+    for(unsigned int i = 0; i < n; i++)
+    {
+        std::vector<double> data = MT_ReadDoublesToEndOfLine(fp);
+        if(data.size() < 2)
+        {
+            fprintf(stderr, "readDSGYABlobsFromFile Error:  No data in line %d.  "
+                    "Bailing.\n", i);
+            fclose(fp);
+            return blobs;
+        }
+        
+        double x = data[0];
+        double y = data[1];
+        double xx = 5;
+        double xy = 0;
+        double yy = 5;
+        double m = 5;
+        double M = 5;
+        double a = 78.5;
+        double o = 0;
+        
+        if(data.size() >= 9)
+        {
+            xx = data[2];
+            xy = data[3];
+            yy = data[4];
+            m = data[5];
+            M = data[6];
+            a = data[7];
+            o = data[8];
+        }
+
+        blobs.push_back(DSGYA_Blob(x, y, xx, xy, yy, m, M, a, o));
+        
+    }
+
+    fclose(fp);
+    return blobs;
+
+}   
+
 DSGYA_Blob::DSGYA_Blob()
     : m_dXCenter(0),
       m_dYCenter(0),
