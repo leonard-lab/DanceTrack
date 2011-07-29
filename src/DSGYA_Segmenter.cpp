@@ -337,7 +337,7 @@ std::vector<DSGYA_Blob> DSGYA_Segmenter::segmentFirstFrame(const IplImage* I,
     
     DSGYBlobber blobber(num_objs);
     blobber.setTestOut(m_pDebugFile);
-    std::vector<GYBlob> blobs = blobber.findBlobs(m_pBlobFrame, num_objs);
+    std::vector<GYBlob> blobs = blobber.findBlobs(m_pBlobFrame, num_objs, 2);
 
     for(unsigned int k = 0; k < num_objs; k++)
     {
@@ -378,7 +378,7 @@ std::vector<DSGYA_Blob> DSGYA_Segmenter::doSegmentation(const IplImage* I,
     std::vector<unsigned int> adj(rows*cols, 0);
     BiCC bicc(rows, cols);
     
-    DEBUG_OUT("Found %d blobs for %d objects\n", rows, cols);
+    DEBUG_OUT("Found %d blobs for %d objects\n", cols, rows);
     
     for(unsigned int i = 0; i < rows; i++)
     {
@@ -395,6 +395,11 @@ std::vector<DSGYA_Blob> DSGYA_Segmenter::doSegmentation(const IplImage* I,
     }
 
     int n_cc = bicc.findComponents(adj);
+    m_viAssignmentMat = bicc.getLabelMatrix();
+    m_viAssignmentVec = bicc.getLabelVector();
+    m_iAssignmentRows = bicc.getNumRows();
+    m_iAssignmentCols = bicc.getNumCols();
+    m_vInitBlobs = yblobs;
 
     DEBUG_OUT("Found %d components, label matrix:\n", n_cc);
     if(m_pDebugFile)

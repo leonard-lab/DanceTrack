@@ -88,6 +88,8 @@ private:
 
     bool m_bShowBlobs;
     bool m_bShowTracking;
+    bool m_bShowInitialBlobs;
+    bool m_bShowAssociations;
 
     /* operational variables */
     double m_dDt;
@@ -95,6 +97,7 @@ private:
     int m_iNObj;
 
     std::vector<DSGYA_Blob> m_vBlobs;
+    std::vector<DSGYA_Blob> m_vPredictedBlobs;    
 
     std::vector<double> m_vdBlobs_X;
     std::vector<double> m_vdBlobs_Y; 
@@ -117,6 +120,11 @@ private:
 
     unsigned int m_iFrameHeight;
 	unsigned int m_iFrameWidth;
+
+    std::vector<unsigned int> m_viAssignments;
+    std::vector<YABlob> m_vInitBlobs;
+    unsigned int m_iAssignmentRows;
+    unsigned int m_iAssignmentCols;    
     
 public:
     /* constructor */

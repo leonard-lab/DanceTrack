@@ -46,3 +46,6 @@ add_executable(${APP_NAME} WIN32 MACOSX_BUNDLE ${APP_SRC})
 
 # sets up the app to build correctly using the right libraries, etc
 MT_tracking_app(${APP_NAME})
+
+find_package(GLUT)
+target_link_libraries(${APP_NAME} ${GLUT_LIBRARY})

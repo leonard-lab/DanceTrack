@@ -2,6 +2,8 @@
 
 #include <fstream>
 
+#include "BiCC.h"
+
 /* default parameter values */
 const unsigned int DEFAULT_BG_THRESH = 200;
 const double DEFAULT_MIN_BLOB_PERIMETER = 10;   
@@ -19,6 +21,36 @@ const unsigned int DEFAULT_VTHRESH_HIGH = 255;
 
 /* default color to draw blobs */
 const MT_Color DEFAULT_BLOB_COLOR = MT_Red;
+
+#define AT_GET "===============================\n"
+#define AT_printf(...) printf(AT_GET "=="); printf(__VA_ARGS__); printf(AT_GET);
+
+static void spit_mat(const std::vector<unsigned int>& m, unsigned int rows, unsigned int cols, FILE* f)
+{
+    for(unsigned int i = 0; i < rows; i++)
+    {
+        for(unsigned int j = 0; j < cols; j++)
+        {
+            fprintf(f, "%d ", (int) m[i*cols + j]);
+        }
+        fprintf(f, "\n");
+    }
+}
+
+void printw(float x, float y, const char* str)
+{
+
+  GLvoid *font_style = GLUT_BITMAP_HELVETICA_12;
+
+  //  Specify the raster position for pixel operations.
+  glRasterPos3f (x, y, 0);
+
+  //  Draw the characters one by one
+  for (unsigned int i = 0; str[i] != '\0'; i++)
+  glutBitmapCharacter(font_style, str[i]);
+
+}
+
 
 void Dance_Segmenter::usePrevious(DSGYA_Blob* obj, unsigned int i)
 {
@@ -206,6 +238,8 @@ DanceTracker::DanceTracker(IplImage* ProtoFrame, unsigned int n_obj)
       m_dPrevSigmaHeadingMeas(0),
       m_bShowBlobs(true),
       m_bShowTracking(true),
+      m_bShowInitialBlobs(true),
+      m_bShowAssociations(true),
       m_dDt(0),
       m_iFrameCounter(0),
       m_iNObj(n_obj),
@@ -293,6 +327,9 @@ void DanceTracker::doInit(IplImage* ProtoFrame)
     m_vdTracked_Vy.resize(m_iNObj);
     m_vbNoMeasurement.resize(m_iNObj, false);
 
+    m_vInitBlobs.resize(0);
+    m_viAssignments.resize(0);
+
     m_vdHistories_X.resize(m_iNObj);
     m_vdHistories_Y.resize(m_iNObj);
     /* there is an X and Y history for each object.  They need to be
@@ -375,8 +412,10 @@ void DanceTracker::doInit(IplImage* ProtoFrame)
                        0);
 
     MT_DataGroup* dg_draw = new MT_DataGroup("Drawing Options");
-    dg_draw->AddBool("Show blob arrows", &m_bShowBlobs);
+    dg_draw->AddBool("Show blob ellipses", &m_bShowBlobs);
     dg_draw->AddBool("Show tracking arrows", &m_bShowTracking);
+    dg_draw->AddBool("Show first pass blob ellipses", &m_bShowInitialBlobs);
+    dg_draw->AddBool("Show associations", &m_bShowAssociations);    
     
     /* now stuff the parameter groups into m_vDataGroups, which
      * MT_TrackerBase will automagically report to the GUI */
@@ -499,6 +538,7 @@ void DanceTracker::initDataFile()
 /* a helper function to write data to a file */
 void DanceTracker::writeData()
 {
+
     /* the XDF object handles writing data to the right files - all we
        have to do is pass the data as vectors */
 /*    m_XDF.writeData("Blob X"           , m_vdBlobs_X); 
@@ -632,27 +672,37 @@ void DanceTracker::doTracking(IplImage* frame)
     segmenter.m_iMaxBlobArea = m_iBlobAreaThreshHigh;
     segmenter.m_dOverlapFactor = m_dOverlapFactor;
 
-    if(m_iFrameCounter <= 2)
+    if(m_iFrameCounter <= 1)
     {
         std::ifstream in_file;
         in_file.open("initials.dat");
         double x, y;
 
         m_vBlobs.resize(0);
-        for(unsigned int i = 0; i < m_iNObj; i++)
-        {
-            in_file >> x;
-            in_file >> y;
-            m_vBlobs.push_back(DSGYA_Blob(x, y, 5, 0, 5, 5, 5, 100, 0));
-        }
+        m_vBlobs = readDSGYABlobsFromFile("initials.dat");
+
+        m_vInitBlobs.resize(0);
+        m_viAssignments.resize(0);
 
 /*        m_vBlobs = segmenter.segmentFirstFrame(m_pThreshFrame,
           m_iNObj); */
     }
     else
     {
-        m_vBlobs = segmenter.doSegmentation(m_pThreshFrame, m_vBlobs);
+        writeDSGYABlobsToFile(m_vBlobs, "blobs-in.dat");
+        writeDSGYABlobsToFile(m_vPredictedBlobs, "predicted-in.dat");
+        
+        bool use_prediction = true;
+        m_vBlobs = segmenter.doSegmentation(m_pThreshFrame,
+                                            use_prediction ? m_vPredictedBlobs : m_vBlobs);
+
+        m_viAssignments = segmenter.getAssignmentVector(&m_iAssignmentRows, &m_iAssignmentCols);
+        m_vInitBlobs = segmenter.getInitialBlobs();
     }
+
+    /* prediction is done below - this makes sure the predicted blobs
+       are OK no matter what */
+    m_vPredictedBlobs = m_vBlobs;
     
     unsigned int sc = 0;
     bool same_frame = false;
@@ -745,7 +795,7 @@ void DanceTracker::doTracking(IplImage* frame)
             CvMat* xp = m_vpUKF[i]->x1;
             MT_UKFSetState(m_vpUKF[i], xp);
         }
-
+        
         /* then constrain the state if necessary - see function
          * definition above */
         constrain_state(m_vpUKF[i]->x, m_vpUKF[i]->x1, frame);            
@@ -761,12 +811,20 @@ void DanceTracker::doTracking(IplImage* frame)
 
         /* take the tracked positions as the blob centers */
         m_vBlobs[i].m_dXCenter = m_vdTracked_X[i];
-        m_vBlobs[i].m_dYCenter = m_vdTracked_Y[i];        
+        m_vBlobs[i].m_dYCenter = m_vdTracked_Y[i];
+
+        /* predict blob locations */
+        CvMat* xp = m_vpUKF[i]->x1;
+        m_vPredictedBlobs[i].m_dXCenter = cvGetReal2D(xp, 0, 0);
+        m_vPredictedBlobs[i].m_dYCenter = cvGetReal2D(xp, 1, 0);        
     
         /* If we wanted the predicted state, this would be how to get
            it */
         /* CvMat* xp = m_vpUKF[i]->x1; */
     }
+
+    writeDSGYABlobsToFile(m_vBlobs, "blobs-out.dat");
+    writeDSGYABlobsToFile(m_vPredictedBlobs, "predicted-out.dat");
     
     /* write data to file */
     writeData();
@@ -787,7 +845,7 @@ void DanceTracker::doGLDrawing(int flags)
        variable */
     if(m_bShowBlobs)
     {
-        for (unsigned int i = 0; i < m_vdBlobs_X.size(); i++)
+        for (unsigned int i = 0; i < MT_MIN(m_vdBlobs_X.size(), m_vBlobs.size()); i++)
         {
 
             /* note that we have to subtract y from the frame_height
@@ -820,6 +878,7 @@ void DanceTracker::doGLDrawing(int flags)
 
     /* essentially the same as above, but with the tracked positions
        instead of the blob positions */
+    char s[50];
     if(m_bShowTracking)
     {
         for (unsigned int i = 0; i < m_vdTracked_X.size(); i++)
@@ -829,18 +888,76 @@ void DanceTracker::doGLDrawing(int flags)
             blobcenter.sety(m_iFrameHeight - m_vdTracked_Y[i]);
             blobcenter.setz( 0 );
 
+            sprintf(s, "%d", i);
+            printw(blobcenter.getx(), blobcenter.gety(), s);
+
             double th = atan2(-m_vdTracked_Vy[i], m_vdTracked_Vx[i]);
 
             MT_DrawArrow(blobcenter,
-                         25.0, 
+                         10.0, 
                          th,
                          MT_Primaries[i % MT_NPrimaries],
-                         1.0 
+                         0.5 
                 );    
         }
     }
 
-	MT_DrawRectangle(m_SearchArea.x, m_iFrameHeight - m_SearchArea.y - m_SearchArea.height, m_SearchArea.width, m_SearchArea.height);
+    double x1, y1, x2, y2;
+
+    if(m_bShowInitialBlobs)
+    {
+        glLineStipple(1, 0x00FF);
+        glEnable(GL_LINE_STIPPLE);
+        for(unsigned int i = 0; i < m_vInitBlobs.size(); i++)
+        {
+            blobcenter.setx(m_vInitBlobs[i].COMx);
+            blobcenter.sety(m_iFrameHeight - m_vInitBlobs[i].COMy);
+            blobcenter.setz( 0 );
+
+            double M, m;
+            M = MT_MAX(m_vInitBlobs[i].major_axis, 0.01);
+            m = MT_MAX(m_vInitBlobs[i].minor_axis, 0.01);
+            
+            MT_DrawEllipse(blobcenter,
+                           M,
+                           m,
+                           m_vInitBlobs[i].orientation,
+                           MT_Green);
+        
+        }
+        glDisable(GL_LINE_STIPPLE);
+    }
+
+    if(m_bShowAssociations)
+    {
+        glLineStipple(1, 0x00FF);
+        glEnable(GL_LINE_STIPPLE);
+        
+        if(m_vInitBlobs.size() > 0 && m_viAssignments.size() > 0)
+        {
+            unsigned int max_label = BiCC::getNumberOfLabels(m_viAssignments);
+            for(unsigned int c = 0; c <  max_label; c++)
+            {
+                for(unsigned int i = 0; i < m_iAssignmentRows; i++)
+                {
+                    x1 = m_vdBlobs_X[i];
+                    y1 = m_iFrameHeight - m_vdBlobs_Y[i];
+                    for(unsigned int j = 0; j < m_iAssignmentCols; j++)
+                    {
+                        if(m_viAssignments[i] == c && m_viAssignments[m_iAssignmentRows + j] == c)
+                        {
+                            x2 = m_vInitBlobs[j].COMx;
+                            y2 = m_iFrameHeight - m_vInitBlobs[j].COMy;
+                            MT_DrawLineFromTo(x1, y1, x2, y2, MT_Red);
+                        }
+                    }
+                }
+            }
+        }
+        glDisable(GL_LINE_STIPPLE);        
+    }
+
+//	MT_DrawRectangle(m_SearchArea.x, m_iFrameHeight - m_SearchArea.y - m_SearchArea.height, m_SearchArea.width, m_SearchArea.height);
 
 }
 

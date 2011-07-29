@@ -48,6 +48,24 @@ public:
                                                       unsigned int num_objs);
     std::vector<DSGYA_Blob> doSegmentation(const IplImage* I,
                                            const std::vector<DSGYA_Blob>& in_blobs);
+
+    std::vector<unsigned int> getAssignmentMatrix(unsigned int* rows = NULL,
+                                                  unsigned int* cols = NULL)
+        const
+    {
+        if(rows){*rows = m_iAssignmentRows;}
+        if(cols){*cols = m_iAssignmentCols;}
+        return m_viAssignmentMat;
+    };
+    std::vector<unsigned int> getAssignmentVector(unsigned int* rows = NULL,
+                                                  unsigned int* cols = NULL)
+        const
+    {
+        if(rows){*rows = m_iAssignmentRows;}
+        if(cols){*cols = m_iAssignmentCols;}
+        return m_viAssignmentVec;
+    };    
+    std::vector<YABlob> getInitialBlobs() const {return m_vInitBlobs;};
     
     unsigned int m_iMinBlobArea;
     unsigned int m_iMinBlobPerimeter;
@@ -61,6 +79,12 @@ protected:
     virtual bool areOverlapping(DSGYA_Blob* obj, const YABlob& blob);
     virtual void usePrevious(DSGYA_Blob* obj, unsigned int i);
     virtual std::vector<YABlob> filterFirstBlobs(const std::vector<YABlob>& in_blobs);
+
+    std::vector<unsigned int> m_viAssignmentMat;
+    std::vector<unsigned int> m_viAssignmentVec;    
+    std::vector<YABlob> m_vInitBlobs;
+    unsigned int m_iAssignmentRows;
+    unsigned int m_iAssignmentCols;
     
 private:
     unsigned int m_iFrameWidth;
