@@ -39,6 +39,7 @@ DSGYBlobber::DSGYBlobber(unsigned int num_obj)
 void DSGYBlobber::setTestOut(FILE* fp)
 {
     m_pTestFile = fp;
+    m_Gaussians.setDebugFile(fp);
 }
 
 void DSGYBlobber::setNumberOfObjects(unsigned int num_obj)
@@ -370,20 +371,35 @@ void DSGYBlobber::doSegmentation(int num_to_find, int max_iters)
     m_RawBlobData[0]->GetPixelList(PixelList);
     for (k = 0 ; k < m_RawBlobData[0]->GetNumPixels() ; k++)
     {
-        int allocated;
-        int numdists = 1;
-        int dist_number = PixelAllocation[k] % numinrawblob;
-
-        ExtractedBlobs[dist_number]->AddPoint(PixelList[k]);
-        allocated = dist_number;
-
-        while (allocated != PixelAllocation[k])
+        int dists = PixelAllocation[k];
+        int p = 1;
+        for(unsigned int i = 0; i < numinrawblob; i++)
         {
-            dist_number = ((PixelAllocation[k] - allocated)/(ipow(numinrawblob, numdists))) % numinrawblob;
-            ExtractedBlobs[dist_number]->AddPoint(PixelList[k]);
-            allocated += dist_number*ipow(numinrawblob, numdists);
-            numdists++;
+            if(dists & p)
+            {
+                ExtractedBlobs[i]->AddPoint(PixelList[k]);
+            }
+            p *= 2;
         }
+        
+        /* int allocated;
+         * int numdists = 1;
+         * int dist_number = PixelAllocation[k] % numinrawblob;
+         * if(dist_number < 0)
+         * {
+         *     continue;
+         * }
+         * 
+         * ExtractedBlobs[dist_number]->AddPoint(PixelList[k]);
+         * allocated = dist_number;
+         * 
+         * while (allocated != PixelAllocation[k])
+         * {
+         *     dist_number = ((PixelAllocation[k] - allocated)/(ipow(numinrawblob, numdists))) % numinrawblob;
+         *     ExtractedBlobs[dist_number]->AddPoint(PixelList[k]);
+         *     allocated += dist_number*ipow(numinrawblob, numdists);
+         *     numdists++;
+         * } */
     }           // end for (k = 0 ; k < m_RawBlobData[i]->GetNumPixels() ; k++)
 
 
