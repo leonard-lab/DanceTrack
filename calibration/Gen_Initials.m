@@ -1,7 +1,7 @@
 clear all;
 close all;
 
-I = imread('../stills/DanceShort1_f1.jpg');
+I = imread('../stills/N13FlockingA_f1.jpg');
 N = 13;
 
 imshow(I)
