@@ -4,7 +4,7 @@
 #include "MT_Core.h"
 #include "MT_Tracking.h"
 
-#include "DSGYA_Segmenter.h"
+#include "MT/MT_Tracking/trackers/DS/DSGYA_Segmenter.h"
 
 const double DEFAULT_SIGMA_POSITION = 4.0; /* pixels */
 const double DEFAULT_SIGMA_HEADING = 0.26; /* rad ~= 15 deg */
@@ -14,14 +14,14 @@ const double DEFAULT_SIGMA_HEADING_MEAS = 0.087; /* rad ~= 5 deg */
 
 class DanceTracker;
 
-class Dance_Segmenter : public DSGYA_Segmenter
+class Dance_Segmenter : public MT_DSGYA_Segmenter
 {
 public:
     Dance_Segmenter(DanceTracker* tracker)
-        : m_pTracker(tracker), DSGYA_Segmenter() {};
+        : m_pTracker(tracker), MT_DSGYA_Segmenter() {};
     ~Dance_Segmenter(){};
 
-    void usePrevious(DSGYA_Blob* obj, unsigned int i);
+    void usePrevious(MT_DSGYA_Blob* obj, unsigned int i);
     
 private:
     DanceTracker* m_pTracker;
@@ -96,8 +96,8 @@ private:
     int m_iFrameCounter;
     int m_iNObj;
 
-    std::vector<DSGYA_Blob> m_vBlobs;
-    std::vector<DSGYA_Blob> m_vPredictedBlobs;    
+    std::vector<MT_DSGYA_Blob> m_vBlobs;
+    std::vector<MT_DSGYA_Blob> m_vPredictedBlobs;    
 
     std::vector<double> m_vdBlobs_X;
     std::vector<double> m_vdBlobs_Y; 

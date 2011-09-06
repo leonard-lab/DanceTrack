@@ -52,9 +52,9 @@ void printw(float x, float y, const char* str)
 }
 
 
-void Dance_Segmenter::usePrevious(DSGYA_Blob* obj, unsigned int i)
+void Dance_Segmenter::usePrevious(MT_DSGYA_Blob* obj, unsigned int i)
 {
-    DSGYA_Segmenter::usePrevious(obj, i);
+    MT_DSGYA_Segmenter::usePrevious(obj, i);
     m_pTracker->notifyNoMeasurement(i);
 }
 
@@ -679,7 +679,7 @@ void DanceTracker::doTracking(IplImage* frame)
         double x, y;
 
         m_vBlobs.resize(0);
-        m_vBlobs = readDSGYABlobsFromFile("initials.dat");
+        m_vBlobs = MT_readDSGYABlobsFromFile("initials.dat");
 
         m_vInitBlobs.resize(0);
         m_viAssignments.resize(0);
@@ -689,8 +689,8 @@ void DanceTracker::doTracking(IplImage* frame)
     }
     else
     {
-        writeDSGYABlobsToFile(m_vBlobs, "blobs-in.dat");
-        writeDSGYABlobsToFile(m_vPredictedBlobs, "predicted-in.dat");
+        MT_writeDSGYABlobsToFile(m_vBlobs, "blobs-in.dat");
+        MT_writeDSGYABlobsToFile(m_vPredictedBlobs, "predicted-in.dat");
         
         bool use_prediction = true;
         m_vBlobs = segmenter.doSegmentation(m_pThreshFrame,
@@ -823,8 +823,8 @@ void DanceTracker::doTracking(IplImage* frame)
         /* CvMat* xp = m_vpUKF[i]->x1; */
     }
 
-    writeDSGYABlobsToFile(m_vBlobs, "blobs-out.dat");
-    writeDSGYABlobsToFile(m_vPredictedBlobs, "predicted-out.dat");
+    MT_writeDSGYABlobsToFile(m_vBlobs, "blobs-out.dat");
+    MT_writeDSGYABlobsToFile(m_vPredictedBlobs, "predicted-out.dat");
     
     /* write data to file */
     writeData();

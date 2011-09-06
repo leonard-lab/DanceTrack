@@ -30,10 +30,6 @@ set(APP_SRC
   src/DanceTrackerGUI.h
   src/DanceTracker.cpp
   src/DanceTracker.h
-  src/DSGYBlobber.cpp
-  src/DSGYBlobber.h
-  src/DSGYA_Segmenter.cpp
-  src/DSGYA_Segmenter.h
   )
 
 # adds src to the header search path
