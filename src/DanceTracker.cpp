@@ -2,7 +2,7 @@
 
 #include <fstream>
 
-#include "BiCC.h"
+#include "MT/MT_Core/support/BiCC.h"
 
 /* default parameter values */
 const unsigned int DEFAULT_BG_THRESH = 200;
@@ -935,7 +935,7 @@ void DanceTracker::doGLDrawing(int flags)
         
         if(m_vInitBlobs.size() > 0 && m_viAssignments.size() > 0)
         {
-            unsigned int max_label = BiCC::getNumberOfLabels(m_viAssignments);
+            unsigned int max_label = MT_BiCC::getNumberOfLabels(m_viAssignments);
             for(unsigned int c = 0; c <  max_label; c++)
             {
                 for(unsigned int i = 0; i < m_iAssignmentRows; i++)

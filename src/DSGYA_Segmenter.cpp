@@ -2,7 +2,7 @@
 
 #include "MT/MT_Tracking/cv/MT_HungarianMatcher.h"
 #include "DSGYBlobber.h"
-#include "BiCC.h"
+#include "MT/MT_Core/support/BiCC.h"
 
 #define DEBUG_OUT(...) if(m_pDebugFile){fprintf(m_pDebugFile, __VA_ARGS__); fflush(m_pDebugFile);}
 
@@ -376,7 +376,7 @@ std::vector<DSGYA_Blob> DSGYA_Segmenter::doSegmentation(const IplImage* I,
     unsigned int cols = yblobs.size();
 
     std::vector<unsigned int> adj(rows*cols, 0);
-    BiCC bicc(rows, cols);
+    MT_BiCC bicc(rows, cols);
     
     DEBUG_OUT("Found %d blobs for %d objects\n", cols, rows);
     
@@ -508,7 +508,7 @@ std::vector<DSGYA_Blob> DSGYA_Segmenter::doSegmentation(const IplImage* I,
                 /* try to extract as many individual blobs as possible */
                 /* DEBUG_OUT("Trying to extract individual blobs\n");
                  * std::vector<unsigned int> o_adj(nobjs*nblobs, 0);
-                 * BiCC o_bicc(nobjs, nblobs);
+                 * MT_BiCC o_bicc(nobjs, nblobs);
                  * 
                  * for(unsigned int ko = 0; ko < nobjs; ko++)
                  * {

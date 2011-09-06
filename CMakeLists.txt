@@ -34,8 +34,6 @@ set(APP_SRC
   src/DSGYBlobber.h
   src/DSGYA_Segmenter.cpp
   src/DSGYA_Segmenter.h
-  src/BiCC.cpp
-  src/BiCC.h
   )
 
 # adds src to the header search path
