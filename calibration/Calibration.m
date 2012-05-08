@@ -39,3 +39,4 @@ I = imread('../stills/calib.jpg');
 imshow(I)
 hold on
 plot(X, Y, 'gx')
+plot(pts_I(1, :), pts_I(2, :), 'bo')
